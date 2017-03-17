@@ -8,6 +8,17 @@
 # User-specific stuff:
 .idea/**/workspace.xml
 .idea/**/tasks.xml
+.idea/**/misc.xml
+.idea/compiler.xml
+.idea/encodings.xml
+.idea/scopes/scope_settings.xml
+.idea/vcs.xml
+.idea/modules/
+.idea/modules.xml
+.idea/sonarlint/
+.idea/
+*.iml
+project/project/
 
 # Sensitive or high-churn files:
 .idea/**/dataSources/
