@@ -1,6 +1,6 @@
 # iroha-scala
 
-Scala library for Hyperledger Iroha.
+Scala library for [Hyperledger Iroha](https://github.com/hyperledger/iroha).
 
 
 ## Install
@@ -8,7 +8,7 @@ Scala library for Hyperledger Iroha.
 Install [sbt](http://www.scala-sbt.org/0.13/docs/Setup.html).
 
 ```sh
-git clone https://github.com/cimadai/iroha-scala.git
+git clone https://github.com/hyperledger/iroha-scala.git
 cd iroha-scala
 sbt publishLocal
 ```
@@ -18,10 +18,12 @@ sbt publishLocal
 1.  build.sbt
 
 ```sh
-libraryDependencies += "net.cimadai" %% "iroha-scala" % "1.0.0"
+libraryDependencies += "org.hyperledger" %% "iroha-scala" % "1.0.0"
 ```
 
 ## Test
+
+Test required local iroha node with gRPC(50051).
 
 ```sh
 sbt test
@@ -33,6 +35,7 @@ sbt compile
 ```
 
 ## License
+
 Copyright 2017 Daisuke SHIMADA.
 
 Licensed under the Apache License, Version 2.0 (the "License");
