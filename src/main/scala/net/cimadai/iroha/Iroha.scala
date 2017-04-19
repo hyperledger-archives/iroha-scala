@@ -97,5 +97,9 @@ object Iroha {
   def createAsset(assetName: String, amount: Long): Asset = {
     Asset(name = assetName, value = Map("value" -> BaseObject(ValueInt(amount))))
   }
+
+  def createAsset(assetName: String, amount: Long, data: Map[String, BaseObject]): Asset = {
+    Asset(name = assetName, value = data ++ Map("value" -> BaseObject(ValueInt(amount))))
+  }
 }
 

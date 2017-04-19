@@ -1,10 +1,10 @@
 package net.cimadai.iroha
 
 import java.util.Base64
-import Api.api.BaseObject.Value.ValueInt
+
+import Api.api.BaseObject.Value.{ValueInt, ValueString}
 import Api.api._
 import io.grpc.ManagedChannelBuilder
-
 import org.scalatest.FunSpec
 
 class IrohaSpec extends FunSpec {
@@ -33,8 +33,16 @@ class IrohaSpec extends FunSpec {
       // create asset
       val ret2 = sumeragiGrpc.torii(Iroha.createTransaction(MethodType.ADD, pubKeyBase64).withAsset(asset))
 
+      // text
+      val textAsset = Iroha.createAsset("text_asset", 10, Map("message" -> BaseObject(ValueString("some message."))))
+      val ret3 = sumeragiGrpc.torii(Iroha.createTransaction(MethodType.ADD, pubKeyBase64).withAsset(textAsset))
+
       assert(ret1.value == "OK", "must be OK.")
       assert(ret2.value == "OK", "must be OK.")
+      assert(ret3.value == "OK", "must be OK.")
+
+      val ret10 = assetRepoGrpc.find(Iroha.createAssetQuery(pubKeyBase64, "text_asset"))
+      println(ret10)
     }
 
     it("transfer run right") {
@@ -76,9 +84,10 @@ class IrohaSpec extends FunSpec {
       assert(ret08.asset.isDefined, "asset must be defined.")
       assert(ret08.asset.get.value("value").getValueInt == 100, "asset's amount must be 100.")
 
+      val transferAsset = Iroha.createAsset("my_asset", 20, Map("message" -> BaseObject(ValueString("This is send for something."))))
       val transferTransaction = Iroha.createTransaction(MethodType.TRANSFER, pubKeyBase64_1)
         .withReceivePubkey(pubKeyBase64_2)
-        .withAsset(Iroha.createAsset("my_asset", 20))
+        .withAsset(transferAsset)
 
       // transfer asset from account1 to account2
       val ret09 = sumeragiGrpc.torii(transferTransaction)
