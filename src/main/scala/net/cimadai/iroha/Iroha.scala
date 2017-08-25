@@ -1,12 +1,21 @@
 package net.cimadai.iroha
 
 import java.security.MessageDigest
+import java.security.spec.{PKCS8EncodedKeySpec, X509EncodedKeySpec}
+import java.util.concurrent.atomic.AtomicLong
 
-import Api.api.BaseObject.Value.{ValueInt, ValueString}
-import Api.api._
-import net.cimadai.iroha.MethodType.MethodType
+import com.google.protobuf.ByteString
+import iroha.network.proto.loader.BlocksRequest
+import iroha.protocol.block.{Header, Transaction}
+import iroha.protocol.commands.Command.Command._
+import iroha.protocol.commands.{Amount, Command}
+import iroha.protocol.primitive.{Permissions, Signature}
+import iroha.protocol.{commands, queries}
+import iroha.protocol.queries.Query
+import iroha.protocol.queries.Query.Query._
 import net.i2p.crypto.eddsa.spec.{EdDSANamedCurveTable, EdDSAPrivateKeySpec, EdDSAPublicKeySpec}
 import net.i2p.crypto.eddsa.{EdDSAEngine, EdDSAPrivateKey, EdDSAPublicKey}
+import org.bouncycastle.util.encoders.Hex
 
 /**
   * Copyright Daisuke SHIMADA All Rights Reserved.
@@ -22,29 +31,76 @@ import net.i2p.crypto.eddsa.{EdDSAEngine, EdDSAPrivateKey, EdDSAPublicKey}
   * limitations under the License.
   */
 
-object MethodType {
-  sealed abstract class MethodType(val name: String)
-  case object ADD extends MethodType("add")
-  case object TRANSFER extends MethodType("transfer")
-  case object UPDATE extends MethodType("update")
-  case object REMOVE extends MethodType("remove")
-  case object CONTRACT extends MethodType("contract")
-}
+case class ValidationError(reason: String)
 
 object Iroha {
-  case class Ed25519KeyPair(privateKey: EdDSAPrivateKey, publicKey: EdDSAPublicKey)
+  private val txCounter = new AtomicLong(1)
+  private val queryCounter = new AtomicLong(1)
+
+  case class Ed25519KeyPair(privateKey: EdDSAPrivateKey, publicKey: EdDSAPublicKey) {
+    def toHex: Ed25519KeyPairHex =
+      Ed25519KeyPairHex(
+        Hex.toHexString(privateKey.getEncoded),
+        Hex.toHexString(publicKey.getEncoded)
+      )
+  }
+
+  case class Ed25519KeyPairHex(privateKeyHex: String, publicKeyHex: String) {
+    def toKey: Ed25519KeyPair =
+      Ed25519KeyPair(
+        new EdDSAPrivateKey(new PKCS8EncodedKeySpec(Hex.decode(privateKeyHex))),
+        new EdDSAPublicKey(new X509EncodedKeySpec(Hex.decode(publicKeyHex)))
+      )
+  }
+
+  case class IrohaDomainName(value: String) {
+    assert(0 < value.length && value.length <= 10, "domainName length must be between 1 to 10")
+    assert(isAlphabetAndNumber(value), "domainName must be only alphabet or number")
+  }
+
+  case class IrohaAssetName(value: String) {
+    assert(0 < value.length && value.length <= 10, "assetName length must be between 1 to 10")
+    assert(isAlphabetAndNumber(value), "assetName must be only alphabet or number")
+  }
+
+  case class IrohaAccountName(value: String) {
+    assert(0 < value.length && value.length <= 8, "accountName length must be between 1 to 8")
+    assert(isAlphabetAndNumber(value), "accountName must be only alphabet or number")
+  }
+
+  case class IrohaAccountId(accountName: IrohaAccountName, domain: IrohaDomainName) {
+    override def toString: String = s"${accountName.value}@${domain.value}"
+  }
+
+  case class IrohaAssetId(assetName: IrohaAssetName, domain: IrohaDomainName) {
+    override def toString: String = s"${assetName.value}#${domain.value}"
+  }
+
+  case class IrohaAmount(intPart: Long, flacPart: Long) {
+    assert(intPart + flacPart > 0, "amount must be greater than 0")
+  }
+
+  // This emulates std::alnum.
+  private def isAlphabetAndNumber(str: String): Boolean = {
+    str.matches("""^[a-zA-Z0-9]+$""")
+  }
+
   private val spec = EdDSANamedCurveTable.getByName(EdDSANamedCurveTable.CURVE_ED25519_SHA512)
   private def withEd25519[T](f: EdDSAEngine => T): T = {
     val signature = new EdDSAEngine(MessageDigest.getInstance(spec.getHashAlgorithm))
     f(signature)
   }
 
-  def createKeyPair(): Ed25519KeyPair = {
+  def createNewKeyPair(): Ed25519KeyPair = {
     val seed = Array.fill[Byte](32) {0x0}
     new scala.util.Random(new java.security.SecureRandom()).nextBytes(seed)
     val sKey = new EdDSAPrivateKey(new EdDSAPrivateKeySpec(seed, spec))
     val vKey = new EdDSAPublicKey(new EdDSAPublicKeySpec(sKey.getAbyte, spec))
     Ed25519KeyPair(sKey, vKey)
+  }
+
+  def createKeyPairFromHex(privateKeyHex: String, publicKeyHex: String): Ed25519KeyPair = {
+    Ed25519KeyPairHex(privateKeyHex, publicKeyHex).toKey
   }
 
   def sign(keyPair: Ed25519KeyPair, message: Array[Byte]): Array[Byte] = {
@@ -61,45 +117,120 @@ object Iroha {
     }
   }
 
-  def createTransaction(methodType: MethodType, publicKeyBase64: String): Transaction = {
-    Transaction(
-      txSignatures = Seq.empty,
-      `type` = methodType.name,
-      senderPubkey = publicKeyBase64,
-      timestamp = System.currentTimeMillis(),
-      asset = None,
-      simpleAsset = None,
-      domain = None,
-      account = None,
-      peer = None
-    )
+  object CommandService {
+    private def createTransaction(creatorAccountId: IrohaAccountId, creatorKeyPair: Ed25519KeyPair, commands: Seq[Command]): Transaction = {
+      val signature = Iroha.sign(creatorKeyPair, commands.map(c => c.toByteArray).foldLeft(Array[Byte]())((accu, each) => accu ++ each))
+      val sig = Signature(ByteString.copyFrom(creatorKeyPair.publicKey.getAbyte), ByteString.copyFrom(signature))
+      // TODO: ugly hack. irohaノードより未来のタイムスタンプを渡すと失敗する。
+      val header = Header(System.currentTimeMillis() - 5000, signatures = Seq(sig))
+      val meta = Transaction.Meta(creatorAccountId.toString, txCounter.incrementAndGet())
+      val body = Transaction.Body(commands)
+      Transaction(header = Some(header), meta = Some(meta), body = Some(body))
+    }
+
+    def addAssetQuantity(creatorAccountId: IrohaAccountId, creatorKeyPair: Ed25519KeyPair, accountId: IrohaAccountId, assetId: IrohaAssetId, amount: IrohaAmount): Transaction = {
+      val command = Command(AddAssetQuantity(commands.AddAssetQuantity(accountId.toString, assetId.toString, Some(Amount(amount.intPart, amount.flacPart)))))
+      createTransaction(creatorAccountId, creatorKeyPair, Seq(command))
+    }
+
+    def addPeer(creatorAccountId: IrohaAccountId, creatorKeyPair: Ed25519KeyPair, address: String, peerKey: String): Transaction = {
+      val command = Command(AddPeer(commands.AddPeer(address, ByteString.copyFrom(peerKey.getBytes()))))
+      createTransaction(creatorAccountId, creatorKeyPair, Seq(command))
+    }
+
+    def addSignatory(creatorAccountId: IrohaAccountId, creatorKeyPair: Ed25519KeyPair, accountId: IrohaAccountId, publicKey: EdDSAPublicKey): Transaction = {
+      val command = Command(AddSignatory(commands.AddSignatory(accountId.toString, ByteString.copyFrom(publicKey.getAbyte))))
+      createTransaction(creatorAccountId, creatorKeyPair, Seq(command))
+    }
+
+    def assignMasterKey(creatorAccountId: IrohaAccountId, creatorKeyPair: Ed25519KeyPair, accountId: IrohaAccountId, publicKey: EdDSAPublicKey): Transaction = {
+      val command = Command(AccountAssignMk(commands.AssignMasterKey(accountId.toString, ByteString.copyFrom(publicKey.getAbyte))))
+      createTransaction(creatorAccountId, creatorKeyPair, Seq(command))
+    }
+
+    def createAsset(creatorAccountId: IrohaAccountId, creatorKeyPair: Ed25519KeyPair, assetName: IrohaAssetName, domainName: IrohaDomainName, precision: Int): Transaction = {
+      val command = Command(CreateAsset(commands.CreateAsset(assetName.value, domainName.value, precision)))
+      createTransaction(creatorAccountId, creatorKeyPair, Seq(command))
+    }
+
+    def createAccount(creatorAccountId: IrohaAccountId, creatorKeyPair: Ed25519KeyPair, publicKey: EdDSAPublicKey, accountName: IrohaAccountName, domainName: IrohaDomainName): Transaction = {
+      val command = Command(CreateAccount(commands.CreateAccount(accountName.value, domainName.value, mainPubkey = ByteString.copyFrom(publicKey.getAbyte))))
+      createTransaction(creatorAccountId, creatorKeyPair, Seq(command))
+    }
+
+    def createDomain(creatorAccountId: IrohaAccountId, creatorKeyPair: Ed25519KeyPair, domainName: IrohaDomainName): Transaction = {
+      val command = Command(CreateDomain(commands.CreateDomain(domainName.value)))
+      createTransaction(creatorAccountId, creatorKeyPair, Seq(command))
+    }
+
+    def removeSignatory(creatorAccountId: IrohaAccountId, creatorKeyPair: Ed25519KeyPair, accountId: IrohaAccountId, publicKey: EdDSAPublicKey): Transaction = {
+      val command = Command(RemoveSign(commands.RemoveSignatory(accountId.toString, ByteString.copyFrom(publicKey.getAbyte))))
+      createTransaction(creatorAccountId, creatorKeyPair, Seq(command))
+    }
+
+    def setAccountPermissions(creatorAccountId: IrohaAccountId, creatorKeyPair: Ed25519KeyPair, accountId: IrohaAccountId, permissions: Permissions): Transaction = {
+      val command = Command(SetPermission(commands.SetAccountPermissions(accountId.toString, Some(permissions))))
+      createTransaction(creatorAccountId, creatorKeyPair, Seq(command))
+    }
+
+    def setAccountQuorum(creatorAccountId: IrohaAccountId, creatorKeyPair: Ed25519KeyPair, accountId: IrohaAccountId, quorum: Int): Transaction = {
+      val command = Command(SetQuorum(commands.SetAccountQuorum(accountId.toString, quorum)))
+      createTransaction(creatorAccountId, creatorKeyPair, Seq(command))
+    }
+
+    def transferAsset(creatorAccountId: IrohaAccountId, creatorKeyPair: Ed25519KeyPair, srcAccountId: IrohaAccountId, destAccountId: IrohaAccountId, assetId: IrohaAssetId, amount: IrohaAmount): Transaction = {
+      val command = Command(TransferAsset(commands.TransferAsset(srcAccountId.toString, destAccountId.toString, assetId.toString, Some(Amount(amount.intPart, amount.flacPart)))))
+      createTransaction(creatorAccountId, creatorKeyPair, Seq(command))
+    }
   }
 
-  def createAccountQuery(publicKeyBase64: String): Query = {
-    Query(
-      `type` = "account",
-      senderPubkey = publicKeyBase64
-    )
+  object QueryService {
+    private def createQuery(creatorAccountId: IrohaAccountId, creatorKeyPair: Ed25519KeyPair, query: Query.Query): Query = {
+      val queryBytes = (query match {
+        case q if q.isGetAccount => q.getAccount.map(_.toByteArray)
+        case q if q.isGetAccountAssets => q.getAccountAssets.map(_.toByteArray)
+        case q if q.isGetAccountAssetTransactions => q.getAccountAssetTransactions.map(_.toByteArray)
+        case q if q.isGetAccountSignatories => q.getAccountSignatories.map(_.toByteArray)
+        case q if q.isGetAccountTransactions => q.getAccountTransactions.map(_.toByteArray)
+      }).getOrElse(Array.empty)
+
+      val signature = Iroha.sign(creatorKeyPair, creatorAccountId.toString.getBytes() ++ queryBytes)
+      val sig = Signature(ByteString.copyFrom(creatorKeyPair.publicKey.getAbyte), ByteString.copyFrom(signature))
+      // TODO: ugly hack. irohaノードより未来のタイムスタンプを渡すと失敗する。
+      val header = Query.Header(System.currentTimeMillis() - 5000, signature = Some(sig))
+      Query(
+        header = Some(header),
+        creatorAccountId = creatorAccountId.toString,
+        queryCounter = queryCounter.incrementAndGet(),
+        query = query
+      )
+    }
+
+    def getAccount(creatorAccountId: IrohaAccountId, creatorKeyPair: Ed25519KeyPair, accountId: IrohaAccountId): Query = {
+      createQuery(creatorAccountId, creatorKeyPair, GetAccount(queries.GetAccount(accountId.toString)))
+    }
+
+    def getAccountAssets(creatorAccountId: IrohaAccountId, creatorKeyPair: Ed25519KeyPair, accountId: IrohaAccountId, assetId: IrohaAssetId): Query = {
+      createQuery(creatorAccountId, creatorKeyPair, GetAccountAssets(queries.GetAccountAssets(accountId.toString, assetId.toString)))
+    }
+
+    def getAccountAssetTransactions(creatorAccountId: IrohaAccountId, creatorKeyPair: Ed25519KeyPair, accountId: IrohaAccountId, assetId: IrohaAssetId): Query = {
+      createQuery(creatorAccountId, creatorKeyPair, GetAccountAssetTransactions(queries.GetAccountAssetTransactions(accountId.toString, assetId.toString)))
+    }
+
+    def getAccountTransactions(creatorAccountId: IrohaAccountId, creatorKeyPair: Ed25519KeyPair, accountId: IrohaAccountId): Query = {
+      createQuery(creatorAccountId, creatorKeyPair, GetAccountTransactions(queries.GetAccountTransactions(accountId.toString)))
+    }
+
+    def getSignatories(creatorAccountId: IrohaAccountId, creatorKeyPair: Ed25519KeyPair, accountId: IrohaAccountId): Query = {
+      createQuery(creatorAccountId, creatorKeyPair, GetAccountSignatories(queries.GetSignatories(accountId.toString)))
+    }
   }
 
-  def createAssetQuery(publicKeyBase64: String, assetName: String): Query = {
-    Query(
-      `type` = "asset",
-      value = Map("name" -> BaseObject(ValueString(assetName))),
-      senderPubkey = publicKeyBase64
-    )
-  }
-
-  def createAccount(publicKeyBase64: String, accountName: String, assetNames: Seq[String]): Account = {
-    Account(publicKey = publicKeyBase64, name = accountName, assets = assetNames)
-  }
-
-  def createAsset(assetName: String, amount: Long): Asset = {
-    Asset(name = assetName, value = Map("value" -> BaseObject(ValueInt(amount))))
-  }
-
-  def createAsset(assetName: String, amount: Long, data: Map[String, BaseObject]): Asset = {
-    Asset(name = assetName, value = data ++ Map("value" -> BaseObject(ValueInt(amount))))
+  object Loader {
+    def blockRequest(height: Long = 0L): BlocksRequest = {
+      BlocksRequest(height)
+    }
   }
 }
 

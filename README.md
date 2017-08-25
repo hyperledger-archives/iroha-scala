@@ -18,7 +18,7 @@ sbt publishLocal
 1.  build.sbt
 
 ```sh
-libraryDependencies += "org.hyperledger" %% "iroha-scala" % "1.0.0"
+libraryDependencies += "org.hyperledger" %% "iroha-scala" % "0.95-SNAPSHOT"
 ```
 
 ## Test

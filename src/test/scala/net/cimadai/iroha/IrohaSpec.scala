@@ -1,112 +1,192 @@
 package net.cimadai.iroha
 
-import java.util.Base64
-
-import Api.api.BaseObject.Value.{ValueInt, ValueString}
-import Api.api._
+import iroha.network.proto.loader.LoaderGrpc
+import iroha.protocol.block.Transaction
+import iroha.protocol.endpoint.{CommandServiceGrpc, QueryServiceGrpc}
+import net.cimadai.iroha.Iroha._
 import io.grpc.ManagedChannelBuilder
+import iroha.protocol.primitive.Permissions
+import iroha.protocol.responses.ErrorResponse
 import org.scalatest.FunSpec
 
 class IrohaSpec extends FunSpec {
-  private val base64Encoder = Base64.getEncoder
-  private lazy val channel = ManagedChannelBuilder.forAddress("localhost", 50051).usePlaintext(true).build()
-  private lazy val sumeragiGrpc = SumeragiGrpc.blockingStub(channel)
-  private lazy val assetRepoGrpc = AssetRepositoryGrpc.blockingStub(channel)
-  private lazy val transactionRepoGrpc = TransactionRepositoryGrpc.blockingStub(channel)
+  private val grpcHost = sys.env.getOrElse("GRPC_HOST", "127.0.0.1")
+  private val grpcPort = sys.env.getOrElse("GRPC_PORT", "50051").toInt
+  private val isSkipTxTest = sys.env.getOrElse("SKIP_TX_TEST", "true").toBoolean
+  private lazy val channel = ManagedChannelBuilder.forAddress(grpcHost, grpcPort).usePlaintext(true).build()
+  private lazy val commandGrpc = CommandServiceGrpc.blockingStub(channel)
+  private lazy val queryGrpc = QueryServiceGrpc.blockingStub(channel)
+  private lazy val loaderGrpc = LoaderGrpc.blockingStub(channel)
 
   describe("IrohaSpec") {
-    it("verify run right") {
-      val keyPair = Iroha.createKeyPair()
+    it("sign and verify run right") {
+      val keyPair = Iroha.createNewKeyPair()
+      val keyPair2 = keyPair.toHex.toKey
       val message = "This is test string".getBytes()
       assert(Iroha.verify(keyPair, Iroha.sign(keyPair, message), message), true)
+      assert(Iroha.verify(keyPair2, Iroha.sign(keyPair, message), message), true)
     }
 
-    it("account creation run right") {
-      val keyPair = Iroha.createKeyPair()
-      val pubKeyBase64 = base64Encoder.encodeToString(keyPair.publicKey.getAbyte)
-      val assets = Seq("my_asset")
-      val account = Account(publicKey = pubKeyBase64, name = "user1", assets = assets)
-      val asset = Asset(name = "my_asset", value = Map("value" -> BaseObject(ValueInt(100))))
+    it("tx and query run right") {
+      if (!isSkipTxTest) {
+        def sendTransaction(tx: Transaction): Unit = {
+          println(tx)
+          println(commandGrpc.torii(tx))
+        }
 
-      // create account
-      val ret1 = sumeragiGrpc.torii(Iroha.createTransaction(MethodType.ADD, pubKeyBase64).withAccount(account))
-      // create asset
-      val ret2 = sumeragiGrpc.torii(Iroha.createTransaction(MethodType.ADD, pubKeyBase64).withAsset(asset))
+        val domain = IrohaDomainName("test")
+        val adminName = IrohaAccountName("admin")
+        val user1Name = IrohaAccountName("user1")
+        val user2Name = IrohaAccountName("user2")
+        val assetName = IrohaAssetName("coin2")
+        val adminId = IrohaAccountId(adminName, domain)
+        val user1Id = IrohaAccountId(user1Name, domain)
+        val user2Id = IrohaAccountId(user2Name, domain)
+        val assetId = IrohaAssetId(assetName, domain)
 
-      // text
-      val textAsset = Iroha.createAsset("text_asset", 10, Map("message" -> BaseObject(ValueString("some message."))))
-      val ret3 = sumeragiGrpc.torii(Iroha.createTransaction(MethodType.ADD, pubKeyBase64).withAsset(textAsset))
+        val adminKeyPair = Iroha.createNewKeyPair()
+        val user1keyPair = Iroha.createKeyPairFromHex(
+          "302f020100300806032b65640a01010420bc87a15afa46cb524668603a2bcc296548c59c57da093ae7961af0633784a75b",
+          "302d300806032b65640a0101032100413728d8d6a682e8f711638b08e322a70f8032e352743787b91fc9bc7831f04e"
+        )
+        val user2keyPair = Iroha.createKeyPairFromHex(
+          "302f020100300806032b65640a01010420520af16ee317954bc9b968441f43032bf443c7fca4bfc76da9276593988e5932",
+          "302d300806032b65640a0101032100e253357eae26b3bef4d100b91f50cba0386bd46356aaf98303cd77a8734fa122"
+        )
 
-      assert(ret1.value == "OK", "must be OK.")
-      assert(ret2.value == "OK", "must be OK.")
-      assert(ret3.value == "OK", "must be OK.")
+        sendTransaction(Iroha.CommandService.createAccount(adminId, adminKeyPair, user1keyPair.publicKey, user1Name, domain))
 
-      val ret10 = assetRepoGrpc.find(Iroha.createAssetQuery(pubKeyBase64, "text_asset"))
-      println(ret10)
-    }
+        sendTransaction(Iroha.CommandService.createAccount(adminId, adminKeyPair, user2keyPair.publicKey, user2Name, domain))
 
-    it("transfer run right") {
-      val keyPair1 = Iroha.createKeyPair()
-      val keyPair2 = Iroha.createKeyPair()
+        val precision = 3 // 小数点以下の桁数
+        sendTransaction(Iroha.CommandService.createAsset(adminId, adminKeyPair, assetName, domain, precision))
 
-      val pubKeyBase64_1 = base64Encoder.encodeToString(keyPair1.publicKey.getAbyte)
-      val pubKeyBase64_2 = base64Encoder.encodeToString(keyPair2.publicKey.getAbyte)
+        sendTransaction(Iroha.CommandService.addAssetQuantity(adminId, adminKeyPair, user1Id, assetId, IrohaAmount(123, 456)))
 
-      val asset = Iroha.createAsset("my_asset", 100)
-      val assets = Seq("my_asset")
-      val account1 = Iroha.createAccount(pubKeyBase64_1, "user1", assets)
-      val account2 = Iroha.createAccount(pubKeyBase64_2, "user2", assets)
+        sendTransaction(Iroha.CommandService.addAssetQuantity(adminId, adminKeyPair, user2Id, assetId, IrohaAmount(111, 111)))
 
-      // prepare two accounts with assets
-      val ret01 = sumeragiGrpc.torii(Iroha.createTransaction(MethodType.ADD, pubKeyBase64_1).withAccount(account1))
-      val ret02 = sumeragiGrpc.torii(Iroha.createTransaction(MethodType.ADD, pubKeyBase64_1).withAsset(asset))
-      val ret03 = sumeragiGrpc.torii(Iroha.createTransaction(MethodType.ADD, pubKeyBase64_2).withAccount(account2))
-      val ret04 = sumeragiGrpc.torii(Iroha.createTransaction(MethodType.ADD, pubKeyBase64_2).withAsset(asset))
-      assert(ret01.value == "OK", "account creation must be success.")
-      assert(ret02.value == "OK", "asset creation must be success.")
-      assert(ret03.value == "OK", "account creation must be success.")
-      assert(ret04.value == "OK", "asset creation must be success.")
+        val permissions = Permissions(
+          issueAssets = true,
+          createAssets = true,
+          createAccounts = true,
+          createDomains = true,
+          readAllAccounts = true,
+          addSignatory = true,
+          removeSignatory = true,
+          setPermissions = true,
+          setQuorum = true,
+          canTransfer = true
+        )
+        sendTransaction(Iroha.CommandService.setAccountPermissions(adminId, adminKeyPair, user1Id, permissions))
 
-      // wait for consensus completion
-      Thread.sleep(20000) // TODO: FIXME. Please fix more smart way to wait for consensus completion.
+        // creatorとuserは同じじゃないとダメ
+        // masterkeyは既存と新が同じだとダメ
+        val user1keyPair2 = Iroha.createNewKeyPair()
+        sendTransaction(Iroha.CommandService.addSignatory(user1Id, user1keyPair, user1Id, user1keyPair2.publicKey))
 
-      // check account existence
-      val ret05 = assetRepoGrpc.find(Iroha.createAccountQuery(pubKeyBase64_1))
-      val ret06 = assetRepoGrpc.find(Iroha.createAccountQuery(pubKeyBase64_2))
-      assert(ret05.message == "OK", "account finding must be success.")
-      assert(ret06.message == "OK", "account finding must be success.")
+        // addSignatoryに入れているものじゃないとダメ
+        sendTransaction(Iroha.CommandService.assignMasterKey(user1Id, user1keyPair, user1Id, user1keyPair2.publicKey))
 
-      // check account existence and amount
-      val ret07 = assetRepoGrpc.find(Iroha.createAssetQuery(pubKeyBase64_1, "my_asset"))
-      val ret08 = assetRepoGrpc.find(Iroha.createAssetQuery(pubKeyBase64_2, "my_asset"))
-      assert(ret07.asset.isDefined, "asset must be defined.")
-      assert(ret07.asset.get.value("value").getValueInt == 100, "asset's amount must be 100.")
-      assert(ret08.asset.isDefined, "asset must be defined.")
-      assert(ret08.asset.get.value("value").getValueInt == 100, "asset's amount must be 100.")
+        sendTransaction(Iroha.CommandService.removeSignatory(user1Id, user1keyPair, user1Id, user1keyPair.publicKey))
 
-      val transferAsset = Iroha.createAsset("my_asset", 20, Map("message" -> BaseObject(ValueString("This is send for something."))))
-      val transferTransaction = Iroha.createTransaction(MethodType.TRANSFER, pubKeyBase64_1)
-        .withReceivePubkey(pubKeyBase64_2)
-        .withAsset(transferAsset)
+        sendTransaction(Iroha.CommandService.setAccountPermissions(adminId, adminKeyPair, user2Id, permissions))
 
-      // transfer asset from account1 to account2
-      val ret09 = sumeragiGrpc.torii(transferTransaction)
-      assert(ret09.value == "OK", "transfer must be success.")
+        // creatorとuserは同じじゃないとダメ
+        val user2keyPair2 = Iroha.createNewKeyPair()
+        sendTransaction(Iroha.CommandService.addSignatory(user2Id, user2keyPair, user2Id, user2keyPair2.publicKey))
 
-      // wait for consensus completion
-      Thread.sleep(20000) // TODO: FIXME. Please fix more smart way to wait for consensus completion.
+        sendTransaction(Iroha.CommandService.assignMasterKey(user2Id, user2keyPair, user2Id, user2keyPair2.publicKey))
 
-      // check account existence and amount
-      val ret10 = assetRepoGrpc.find(Iroha.createAssetQuery(pubKeyBase64_1, "my_asset"))
-      val ret11 = assetRepoGrpc.find(Iroha.createAssetQuery(pubKeyBase64_2, "my_asset"))
-      assert(ret10.asset.isDefined, "asset must be defined.")
-      assert(ret10.asset.get.value("value").getValueInt == 80, "asset's amount must be 80.")
-      assert(ret11.asset.isDefined, "asset must be defined.")
-      assert(ret11.asset.get.value("value").getValueInt == 120, "asset's amount must be 120.")
+        sendTransaction(Iroha.CommandService.removeSignatory(user2Id, user2keyPair, user2Id, user2keyPair.publicKey))
 
-      val ret12 = transactionRepoGrpc.find(Iroha.createAccountQuery(pubKeyBase64_1))
+        sendTransaction(Iroha.CommandService.transferAsset(user1Id, user1keyPair, user1Id, user2Id, assetId, IrohaAmount(10, 10)))
 
-      assert(ret12.transaction.nonEmpty, "history is not empty")
+        // wait for consensus completion
+        Thread.sleep(10000) // TODO: FIXME. Please fix more smart way to wait for consensus completion.
+
+        //////////////////////////////////
+        val queryRes0 = queryGrpc.find(Iroha.QueryService.getAccount(adminId, adminKeyPair, user1Id))
+        assert(queryRes0.response.isAccountResponse)
+        assert(queryRes0.response.accountResponse.isDefined)
+        assert(queryRes0.response.accountResponse.get.account.isDefined)
+        assert(queryRes0.response.accountResponse.get.account.get.accountId == user1Id.toString)
+        assert(queryRes0.response.accountResponse.get.account.get.permissions.isDefined)
+        assert(queryRes0.response.accountResponse.get.account.get.permissions.get.issueAssets == permissions.issueAssets)
+        assert(queryRes0.response.accountResponse.get.account.get.permissions.get.createAssets == permissions.createAssets)
+        assert(queryRes0.response.accountResponse.get.account.get.permissions.get.createAccounts == permissions.createAccounts)
+        assert(queryRes0.response.accountResponse.get.account.get.permissions.get.createDomains == permissions.createDomains)
+        assert(queryRes0.response.accountResponse.get.account.get.permissions.get.readAllAccounts == permissions.readAllAccounts)
+        assert(queryRes0.response.accountResponse.get.account.get.permissions.get.addSignatory == permissions.addSignatory)
+        assert(queryRes0.response.accountResponse.get.account.get.permissions.get.removeSignatory == permissions.removeSignatory)
+        assert(queryRes0.response.accountResponse.get.account.get.permissions.get.setPermissions == permissions.setPermissions)
+        assert(queryRes0.response.accountResponse.get.account.get.permissions.get.setQuorum == permissions.setQuorum)
+        assert(queryRes0.response.accountResponse.get.account.get.permissions.get.canTransfer == permissions.canTransfer)
+        assert(queryRes0.response.accountResponse.get.account.get.quorum == 1)
+
+        val queryRes1 = queryGrpc.find(Iroha.QueryService.getAccountAssets(user1Id, user1keyPair, user1Id, assetId))
+        assert(queryRes1.response.isAccountAssetsResponse)
+        assert(queryRes1.response.accountAssetsResponse.isDefined)
+        assert(queryRes1.response.accountAssetsResponse.get.accountAsset.isDefined)
+        assert(queryRes1.response.accountAssetsResponse.get.accountAsset.get.accountId == user1Id.toString)
+        assert(queryRes1.response.accountAssetsResponse.get.accountAsset.get.assetId == assetId.toString)
+        assert(queryRes1.response.accountAssetsResponse.get.accountAsset.get.balance == 113446)
+
+        val queryRes2 = queryGrpc.find(Iroha.QueryService.getAccountAssetTransactions(user1Id, user1keyPair, user1Id, assetId))
+        assert(queryRes2.response.isErrorResponse)
+        assert(queryRes2.response.errorResponse.isDefined)
+        assert(queryRes2.response.errorResponse.get.reason == ErrorResponse.Reason.NOT_SUPPORTED)
+
+        val queryRes3 = queryGrpc.find(Iroha.QueryService.getAccountTransactions(user1Id, user1keyPair, user1Id))
+        assert(queryRes3.response.isTransactionsResponse)
+        assert(queryRes3.response.transactionsResponse.isDefined)
+        assert(queryRes3.response.transactionsResponse.get.transactions.length == 4)
+
+        val queryRes4 = queryGrpc.find(Iroha.QueryService.getSignatories(user1Id, user1keyPair, user1Id))
+        assert(queryRes4.response.isSignatoriesResponse)
+        assert(queryRes4.response.signatoriesResponse.isDefined)
+        assert(queryRes4.response.signatoriesResponse.get.keys.length == 1)
+
+        val queryRes5 = queryGrpc.find(Iroha.QueryService.getAccount(user2Id, user2keyPair, user2Id))
+        assert(queryRes5.response.isAccountResponse)
+        assert(queryRes5.response.accountResponse.isDefined)
+        assert(queryRes5.response.accountResponse.get.account.isDefined)
+        assert(queryRes5.response.accountResponse.get.account.get.accountId == user2Id.toString)
+        assert(queryRes5.response.accountResponse.get.account.get.permissions.isDefined)
+        assert(queryRes5.response.accountResponse.get.account.get.permissions.get.issueAssets == permissions.issueAssets)
+        assert(queryRes5.response.accountResponse.get.account.get.permissions.get.createAssets == permissions.createAssets)
+        assert(queryRes5.response.accountResponse.get.account.get.permissions.get.createAccounts == permissions.createAccounts)
+        assert(queryRes5.response.accountResponse.get.account.get.permissions.get.createDomains == permissions.createDomains)
+        assert(queryRes5.response.accountResponse.get.account.get.permissions.get.readAllAccounts == permissions.readAllAccounts)
+        assert(queryRes5.response.accountResponse.get.account.get.permissions.get.addSignatory == permissions.addSignatory)
+        assert(queryRes5.response.accountResponse.get.account.get.permissions.get.removeSignatory == permissions.removeSignatory)
+        assert(queryRes5.response.accountResponse.get.account.get.permissions.get.setPermissions == permissions.setPermissions)
+        assert(queryRes5.response.accountResponse.get.account.get.permissions.get.setQuorum == permissions.setQuorum)
+        assert(queryRes5.response.accountResponse.get.account.get.permissions.get.canTransfer == permissions.canTransfer)
+        assert(queryRes5.response.accountResponse.get.account.get.quorum == 1)
+
+        val queryRes6 = queryGrpc.find(Iroha.QueryService.getAccountAssets(user2Id, user2keyPair, user2Id, assetId))
+        assert(queryRes6.response.isAccountAssetsResponse)
+        assert(queryRes6.response.accountAssetsResponse.isDefined)
+        assert(queryRes6.response.accountAssetsResponse.get.accountAsset.isDefined)
+        assert(queryRes6.response.accountAssetsResponse.get.accountAsset.get.accountId == user2Id.toString)
+        assert(queryRes6.response.accountAssetsResponse.get.accountAsset.get.assetId == assetId.toString)
+        assert(queryRes6.response.accountAssetsResponse.get.accountAsset.get.balance == 121121)
+
+        val queryRes7 = queryGrpc.find(Iroha.QueryService.getAccountAssetTransactions(user2Id, user2keyPair, user2Id, assetId))
+        assert(queryRes7.response.isErrorResponse)
+        assert(queryRes7.response.errorResponse.isDefined)
+        assert(queryRes7.response.errorResponse.get.reason == ErrorResponse.Reason.NOT_SUPPORTED)
+
+        val queryRes8 = queryGrpc.find(Iroha.QueryService.getAccountTransactions(user2Id, user2keyPair, user2Id))
+        assert(queryRes8.response.isTransactionsResponse)
+        assert(queryRes8.response.transactionsResponse.isDefined)
+        assert(queryRes8.response.transactionsResponse.get.transactions.length == 3)
+
+        val queryRes9 = queryGrpc.find(Iroha.QueryService.getSignatories(user2Id, user2keyPair, user2Id))
+        assert(queryRes9.response.isSignatoriesResponse)
+        assert(queryRes9.response.signatoriesResponse.isDefined)
+        assert(queryRes9.response.signatoriesResponse.get.keys.length == 1)
+      }
     }
   }
 }
