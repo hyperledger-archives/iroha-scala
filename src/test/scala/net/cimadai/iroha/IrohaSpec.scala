@@ -54,8 +54,8 @@ class IrohaSpec extends FunSpec {
 
         val domain = IrohaDomainName("test")
         val adminName = IrohaAccountName("admin")
-        val user1Name = IrohaAccountName("usera")
-        val user2Name = IrohaAccountName("userb")
+        val user1Name = IrohaAccountName("test-user-1-abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxz")
+        val user2Name = IrohaAccountName("test-user-2")
         val assetName = IrohaAssetName("coina")
         val adminId = IrohaAccountId(adminName, domain)
         val user1Id = IrohaAccountId(user1Name, domain)
@@ -63,8 +63,7 @@ class IrohaSpec extends FunSpec {
         val assetId = IrohaAssetId(assetName, domain)
 
         val adminKeyPair = Iroha.createKeyPairFromHex(
-          "881e179b8d6900f892b43c7010c77e47731711735dae462ba9a8d12a9d956e58ab5bce5597a9914b0a743fccd3c56e521c1b59d73391d8ae33cc3667c5068539",
-          "b373ff6f6ecacb16addd03a0691b827f675aac402236d95022dedf8202fcccbd"
+          "881e179b8d6900f892b43c7010c77e47731711735dae462ba9a8d12a9d956e58ab5bce5597a9914b0a743fccd3c56e521c1b59d73391d8ae33cc3667c5068539"
         )
 
         val roleName = "test_role"
@@ -89,6 +88,9 @@ class IrohaSpec extends FunSpec {
 
         val precision = IrohaAssetPrecision(3) // 小数点以下の桁数
         sendTransaction(Iroha.CommandService.createAsset(adminId, adminKeyPair, assetName, domain, precision))
+
+        // creatorとuserは同じじゃないとダメ
+        sendTransaction(Iroha.CommandService.addAssetQuantity(adminId, adminKeyPair, adminId, assetId, IrohaAmount(Some(uint256(0L, 0L, 0L, Long.MaxValue)), precision)))
 
         // creatorとuserは同じじゃないとダメ
         sendTransaction(Iroha.CommandService.addAssetQuantity(user1Id, user1keyPair, user1Id, assetId, IrohaAmount(Some(uint256(0L, 0L, 0L, 123456L)), precision)))

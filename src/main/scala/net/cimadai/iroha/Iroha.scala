@@ -52,12 +52,14 @@ object Iroha {
   }
 
   case class Ed25519KeyPair(privateKey: EdDSAPrivateKey, publicKey: EdDSAPublicKey) {
-    def toHex: Ed25519KeyPairHex = Ed25519KeyPairHex(privateKey.toPrivateKeyHex, publicKey.toPublicKeyHex)
+    def toHex: Ed25519KeyPairHex = Ed25519KeyPairHex(privateKey.toPrivateKeyHex)
   }
 
-  case class Ed25519KeyPairHex(privateKeyHex: String, publicKeyHex: String) {
-    val sKey = new EdDSAPrivateKey(new EdDSAPrivateKeySpec(spec, Utils.hexToBytes(privateKeyHex)))
-    val pKey = new EdDSAPublicKey(new EdDSAPublicKeySpec(sKey.toPublicKeyBytes, spec))
+  case class Ed25519KeyPairHex(privateKeyHex: String) {
+    private val sKey = new EdDSAPrivateKey(new EdDSAPrivateKeySpec(spec, Utils.hexToBytes(privateKeyHex)))
+    private val pKey = new EdDSAPublicKey(new EdDSAPublicKeySpec(sKey.toPublicKeyBytes, spec))
+
+    def publicKey: String = sKey.toPublicKeyHex
 
     def toKey: Ed25519KeyPair =
       Ed25519KeyPair(sKey, pKey)
@@ -74,8 +76,13 @@ object Iroha {
   }
 
   case class IrohaAccountName(value: String) {
-    assert(0 < value.length && value.length <= 8, "accountName length must be between 1 to 8")
-    assert(isAlphabetAndNumber(value), "accountName must be only alphabet or number")
+    assert(0 < value.length && value.length <= 63, "accountName length must be between 1 to 63")
+    assert(isAlphabetAndNumber(value), "accountName must be only alphabet or number or hyphen")
+  }
+
+  case class IrohaRoleName(value: String) {
+    assert(0 < value.length && value.length <= 10, "assetName length must be between 1 to 10")
+    assert(isAlphabetAndNumber(value), "assetName must be only alphabet or number")
   }
 
   case class IrohaAssetPrecision(value: Int) {
@@ -90,6 +97,10 @@ object Iroha {
     override def toString: String = s"${assetName.value}#${domain.value}"
   }
 
+  case class IrohaRoleId(roleName: IrohaRoleName) {
+    override def toString: String = s"${roleName.value}"
+  }
+
   case class IrohaAmount(value: Option[uint256], precision: IrohaAssetPrecision) {
     private val isPositive = (
     value.getOrElse(uint256()).first +
@@ -101,7 +112,7 @@ object Iroha {
 
   // This emulates std::alnum.
   private def isAlphabetAndNumber(str: String): Boolean = {
-    str.matches("""^[a-zA-Z0-9]+$""")
+    str.matches("""^[a-zA-Z0-9-]+$""")
   }
 
   private val spec = EdDSANamedCurveTable.getByName("Ed25519")
@@ -118,8 +129,8 @@ object Iroha {
     Ed25519KeyPair(sKey, vKey)
   }
 
-  def createKeyPairFromHex(privateKeyHex: String, publicKeyHex: String): Ed25519KeyPair = {
-    Ed25519KeyPairHex(privateKeyHex, publicKeyHex).toKey
+  def createKeyPairFromHex(privateKeyHex: String): Ed25519KeyPair = {
+    Ed25519KeyPairHex(privateKeyHex).toKey
   }
 
   def sign(keyPair: Ed25519KeyPair, message: Array[Byte]): Array[Byte] = {
@@ -258,9 +269,22 @@ object Iroha {
       createQuery(creatorAccountId, creatorKeyPair, Query.Payload.Query.GetAccountTransactions(queries.GetAccountTransactions(accountId.toString)))
     }
 
+    def getAssetInfo(creatorAccountId: IrohaAccountId, creatorKeyPair: Ed25519KeyPair, assetId: IrohaAssetId): Query = {
+      createQuery(creatorAccountId, creatorKeyPair, Query.Payload.Query.GetAssetInfo(queries.GetAssetInfo(assetId.toString)))
+    }
+
+    def getRolePermissions(creatorAccountId: IrohaAccountId, creatorKeyPair: Ed25519KeyPair, roleId: IrohaRoleId): Query = {
+      createQuery(creatorAccountId, creatorKeyPair, Query.Payload.Query.GetRolePermissions(queries.GetRolePermissions(roleId.toString)))
+    }
+
+    def getRoles(creatorAccountId: IrohaAccountId, creatorKeyPair: Ed25519KeyPair): Query = {
+      createQuery(creatorAccountId, creatorKeyPair, Query.Payload.Query.GetRoles(queries.GetRoles()))
+    }
+
     def getSignatories(creatorAccountId: IrohaAccountId, creatorKeyPair: Ed25519KeyPair, accountId: IrohaAccountId): Query = {
       createQuery(creatorAccountId, creatorKeyPair, Query.Payload.Query.GetAccountSignatories(queries.GetSignatories(accountId.toString)))
     }
+
   }
 
   object Loader {
