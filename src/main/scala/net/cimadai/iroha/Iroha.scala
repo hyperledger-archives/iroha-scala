@@ -102,12 +102,12 @@ object Iroha {
   }
 
   case class IrohaAmount(value: Option[uint256], precision: IrohaAssetPrecision) {
-    private val isPositive = (
-    value.getOrElse(uint256()).first +
-    value.getOrElse(uint256()).second +
-    value.getOrElse(uint256()).third +
-    value.getOrElse(uint256()).fourth) > 0
-    assert(isPositive, "amount must be greater than 0")
+    private val isZeroOrPositive = {
+      val v = value.getOrElse(uint256())
+      (v.first >= 0 && v.second >= 0 && v.third >= 0 && v.fourth >= 0) &&
+        (v.first + v.second + v.third + v.fourth) >= 0
+    }
+    assert(isZeroOrPositive, "amount must be greater equal than 0")
   }
 
   // This emulates std::alnum.
