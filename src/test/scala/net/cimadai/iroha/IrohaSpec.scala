@@ -2,7 +2,7 @@ package net.cimadai.iroha
 
 import io.grpc.{ManagedChannel, ManagedChannelBuilder}
 import iroha.protocol.block.Transaction
-import iroha.protocol.endpoint.{CommandServiceGrpc, QueryServiceGrpc}
+import iroha.protocol.endpoint._
 import iroha.protocol.primitive.{Amount, uint256}
 import iroha.protocol.queries.Query
 import iroha.protocol.responses.QueryResponse
@@ -10,6 +10,8 @@ import net.cimadai.iroha.Iroha._
 import net.i2p.crypto.eddsa.Utils
 import org.bouncycastle.jcajce.provider.digest.SHA3
 import org.scalatest.FunSpec
+
+import scala.util.Random
 
 class IrohaSpec extends FunSpec {
   private val grpcHost: String = sys.env.getOrElse("GRPC_HOST", "127.0.0.1")
@@ -65,6 +67,11 @@ class IrohaSpec extends FunSpec {
       commandGrpc.torii(tx)
     }
 
+    def askTransactionStatus(txStatusRequest: TxStatusRequest): ToriiResponse = {
+      commandGrpc.status(txStatusRequest)
+    }
+
+
     def sendQuery(query: Query): QueryResponse = {
       println("== Qry ==")
       println(query)
@@ -75,6 +82,28 @@ class IrohaSpec extends FunSpec {
       resp
     }
 
+    it("ask transaction status") {
+      if (!isSkipTxTest) {
+
+        val domain = IrohaDomainName("test.domain")
+        val adminName = IrohaAccountName("admin")
+        val adminId = IrohaAccountId(adminName, domain)
+        val user1Name = IrohaAccountName(Random.alphanumeric.take(10).mkString)
+        val privateHex = "1d7e0a32ee0affeb4d22acd73c2c6fb6bd58e266c8c2ce4fa0ffe3dd6a253ffb"
+        val publicHex = "407e57f50ca48969b08ba948171bb2435e035d82cec417e18e4a38f5fb113f83"
+        val adminKeyPair = Iroha.createKeyPairFromBytes(new SHA3.Digest512().digest(Utils.hexToBytes(privateHex)))
+        assert(adminKeyPair.toHex.publicKey == publicHex)
+
+        val user1keyPair = Iroha.createNewKeyPair()
+        val transaction = Iroha.CommandService.createAccount(adminId, adminKeyPair, user1keyPair.publicKey, user1Name, domain)
+        sendTransaction(transaction)
+
+        Thread.sleep(7000) // TODO: FIXME. Please fix more smart way to wait for consensus completion.
+
+        val response = askTransactionStatus(Iroha.CommandService.txStatusRequest(transaction))
+        assert(response.txStatus == TxStatus.COMMITTED)
+      }
+    }
     it("tx and query run right") {
       if (!isSkipTxTest) {
         val domain = IrohaDomainName("test.domain")
@@ -88,7 +117,7 @@ class IrohaSpec extends FunSpec {
         val assetId = IrohaAssetId(assetName, domain)
 
         val privateHex = "1d7e0a32ee0affeb4d22acd73c2c6fb6bd58e266c8c2ce4fa0ffe3dd6a253ffb"
-        val publicHex  = "407e57f50ca48969b08ba948171bb2435e035d82cec417e18e4a38f5fb113f83"
+        val publicHex = "407e57f50ca48969b08ba948171bb2435e035d82cec417e18e4a38f5fb113f83"
         val adminKeyPair = Iroha.createKeyPairFromBytes(new SHA3.Digest512().digest(Utils.hexToBytes(privateHex)))
         assert(adminKeyPair.toHex.publicKey == publicHex)
 

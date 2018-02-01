@@ -7,6 +7,7 @@ import iroha.network.proto.loader.BlocksRequest
 import iroha.protocol.block.Transaction
 import iroha.protocol.commands.Command
 import iroha.protocol.commands.Command.Command._
+import iroha.protocol.endpoint.TxStatusRequest
 import iroha.protocol.primitive._
 import iroha.protocol.queries.Query
 import iroha.protocol.{commands, queries}
@@ -171,7 +172,7 @@ object Iroha {
         commands = commands,
         creatorAccountId = creatorAccountId.toString,
         txCounter = txCounter.getAndIncrement(),
-        createdTime = System.currentTimeMillis() - 5000) // TODO: ugly hack. irohaノードより未来のタイムスタンプを渡すと失敗する。
+        createdTime = System.currentTimeMillis() - 2000000) // TODO: ugly hack. irohaノードより未来のタイムスタンプを渡すと失敗する。
 
       val sha3_256 = new SHA3.Digest256()
       val hash = sha3_256.digest(payload.toByteArray)
@@ -180,6 +181,10 @@ object Iroha {
         ByteString.copyFrom(Iroha.sign(creatorKeyPair, hash))
       )
       Transaction(Some(payload), Seq(sig))
+    }
+
+    def txHash(transaction: Transaction): Array[Byte] = {
+      new SHA3.Digest256().digest(transaction.payload.get.toByteArray)
     }
 
     def appendRole(creatorAccountId: IrohaAccountId, creatorKeyPair: Ed25519KeyPair, accountId: IrohaAccountId, roleName: String): Transaction = {
@@ -251,12 +256,18 @@ object Iroha {
         Some(Amount(amount.value, amount.precision.value)))))
       createTransaction(creatorAccountId, creatorKeyPair, Seq(command))
     }
+
+
+    def txStatusRequest(transaction: Transaction): TxStatusRequest =
+      TxStatusRequest(ByteString.copyFrom(Iroha.CommandService.txHash(transaction)))
+
+
   }
 
   object QueryService {
     private def createQuery(creatorAccountId: IrohaAccountId, creatorKeyPair: Ed25519KeyPair, query: Query.Payload.Query): Query = {
       val payload = Query.Payload(
-        createdTime = System.currentTimeMillis() - 5000, // TODO: ugly hack. irohaノードより未来のタイムスタンプを渡すと失敗する。
+        createdTime = System.currentTimeMillis() - 2000000, // TODO: ugly hack. irohaノードより未来のタイムスタンプを渡すと失敗する。
         creatorAccountId = creatorAccountId.toString,
         queryCounter = queryCounter.getAndIncrement(),
         query
