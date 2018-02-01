@@ -1,6 +1,5 @@
 package net.cimadai.iroha
 
-import java.security.MessageDigest
 import java.util.concurrent.atomic.AtomicLong
 
 import com.google.protobuf.ByteString
@@ -11,7 +10,8 @@ import iroha.protocol.commands.Command.Command._
 import iroha.protocol.primitive._
 import iroha.protocol.queries.Query
 import iroha.protocol.{commands, queries}
-import net.i2p.crypto.eddsa.spec.{EdDSANamedCurveTable, EdDSAPrivateKeySpec, EdDSAPublicKeySpec}
+import net.cimadai.crypto.{SHA3EdDSAParameterSpec, SHA3EdDSAPrivateKeySpec}
+import net.i2p.crypto.eddsa.spec.EdDSAPublicKeySpec
 import net.i2p.crypto.eddsa.{EdDSAEngine, EdDSAPrivateKey, EdDSAPublicKey, Utils}
 import org.bouncycastle.jcajce.provider.digest.SHA3
 
@@ -55,8 +55,14 @@ object Iroha {
     def toHex: Ed25519KeyPairHex = Ed25519KeyPairHex(privateKey.toPrivateKeyHex)
   }
 
-  case class Ed25519KeyPairHex(privateKeyHex: String) {
-    private val sKey = new EdDSAPrivateKey(new EdDSAPrivateKeySpec(spec, Utils.hexToBytes(privateKeyHex)))
+  object Ed25519KeyPairHex {
+    def apply (privateKeyHex: String): Ed25519KeyPairHex = {
+      Ed25519KeyPairHex(Utils.hexToBytes(privateKeyHex))
+    }
+  }
+
+  case class Ed25519KeyPairHex(privateKeyBytes: Array[Byte]) {
+    private val sKey = new EdDSAPrivateKey(SHA3EdDSAPrivateKeySpec(spec, privateKeyBytes))
     private val pKey = new EdDSAPublicKey(new EdDSAPublicKeySpec(sKey.toPublicKeyBytes, spec))
 
     def publicKey: String = sKey.toPublicKeyHex
@@ -66,8 +72,8 @@ object Iroha {
   }
 
   case class IrohaDomainName(value: String) {
-    assert(0 < value.length && value.length <= 10, "domainName length must be between 1 to 10")
-    assert(isAlphabetAndNumber(value), "domainName must be only alphabet or number")
+    assert(0 < value.length && value.length <= 64, "domainName length must be between 1 to 64")
+    assert(isValidDomain(value), "domainName must be only alphabet or number")
   }
 
   case class IrohaAssetName(value: String) {
@@ -76,13 +82,13 @@ object Iroha {
   }
 
   case class IrohaAccountName(value: String) {
-    assert(0 < value.length && value.length <= 63, "accountName length must be between 1 to 63")
-    assert(isAlphabetAndNumber(value), "accountName must be only alphabet or number or hyphen")
+    assert(0 < value.length && value.length <= 32, "accountName length must be between 1 to 32")
+    assert(isValidName(value), "accountName must be only alphabet or number or hyphen")
   }
 
   case class IrohaRoleName(value: String) {
-    assert(0 < value.length && value.length <= 10, "assetName length must be between 1 to 10")
-    assert(isAlphabetAndNumber(value), "assetName must be only alphabet or number")
+    assert(0 < value.length && value.length <= 8, "roleName length must be between 1 to 8")
+    assert(isAlphabetAndNumber(value), "roleName must be only alphabet or number")
   }
 
   case class IrohaAssetPrecision(value: Int) {
@@ -112,25 +118,37 @@ object Iroha {
 
   // This emulates std::alnum.
   private def isAlphabetAndNumber(str: String): Boolean = {
-    str.matches("""^[a-zA-Z0-9-]+$""")
+    str.matches("""^[a-z_0-9]+$""")
   }
 
-  private val spec = EdDSANamedCurveTable.getByName("Ed25519")
+  private def isValidDomain(str: String): Boolean = {
+    str.matches("""^[a-zA-Z0-9][a-zA-Z0-9-]{1,61}[a-zA-Z0-9]\.[a-zA-Z]{2,}$""")
+  }
+  private def isValidName(str: String): Boolean = {
+    str.matches("""^[a-zA-Z0-9][a-zA-Z0-9-]{1,32}$""")
+  }
+
+  private val spec = new SHA3EdDSAParameterSpec
+
   private def withEd25519[T](f: EdDSAEngine => T): T = {
-    val signature = new EdDSAEngine(MessageDigest.getInstance(spec.getHashAlgorithm))
+    val signature = new EdDSAEngine(new SHA3.Digest512())
     f(signature)
   }
 
   def createNewKeyPair(): Ed25519KeyPair = {
     val seed = Array.fill[Byte](32) {0x0}
     new scala.util.Random(new java.security.SecureRandom()).nextBytes(seed)
-    val sKey = new EdDSAPrivateKey(new EdDSAPrivateKeySpec(seed, spec))
+    val sKey = new EdDSAPrivateKey(SHA3EdDSAPrivateKeySpec(seed, spec))
     val vKey = new EdDSAPublicKey(new EdDSAPublicKeySpec(sKey.toPublicKeyBytes, spec))
     Ed25519KeyPair(sKey, vKey)
   }
 
   def createKeyPairFromHex(privateKeyHex: String): Ed25519KeyPair = {
     Ed25519KeyPairHex(privateKeyHex).toKey
+  }
+
+  def createKeyPairFromBytes(privateKeyBytes: Array[Byte]): Ed25519KeyPair = {
+    Ed25519KeyPairHex(privateKeyBytes).toKey
   }
 
   def sign(keyPair: Ed25519KeyPair, message: Array[Byte]): Array[Byte] = {

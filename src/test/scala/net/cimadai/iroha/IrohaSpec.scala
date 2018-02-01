@@ -1,35 +1,61 @@
 package net.cimadai.iroha
 
-import io.grpc.ManagedChannelBuilder
-import iroha.network.proto.loader.LoaderGrpc
+import io.grpc.{ManagedChannel, ManagedChannelBuilder}
 import iroha.protocol.block.Transaction
 import iroha.protocol.endpoint.{CommandServiceGrpc, QueryServiceGrpc}
-import iroha.protocol.primitive.{Amount, RolePermission, uint256}
+import iroha.protocol.primitive.{Amount, uint256}
 import iroha.protocol.queries.Query
 import iroha.protocol.responses.QueryResponse
 import net.cimadai.iroha.Iroha._
+import net.i2p.crypto.eddsa.Utils
 import org.bouncycastle.jcajce.provider.digest.SHA3
 import org.scalatest.FunSpec
 
 class IrohaSpec extends FunSpec {
-  private val grpcHost = sys.env.getOrElse("GRPC_HOST", "127.0.0.1")
-  private val grpcPort = sys.env.getOrElse("GRPC_PORT", "50051").toInt
-  private val isSkipTxTest = sys.env.getOrElse("SKIP_TX_TEST", "true").toBoolean
-  private lazy val channel = ManagedChannelBuilder.forAddress(grpcHost, grpcPort).usePlaintext(true).build()
-  private lazy val commandGrpc = CommandServiceGrpc.blockingStub(channel)
-  private lazy val queryGrpc = QueryServiceGrpc.blockingStub(channel)
-  private lazy val loaderGrpc = LoaderGrpc.blockingStub(channel)
+  private val grpcHost: String = sys.env.getOrElse("GRPC_HOST", "127.0.0.1")
+  private val grpcPort: Int = sys.env.getOrElse("GRPC_PORT", "50051").toInt
+  private val nodeNum: Int = sys.env.getOrElse("NODE_NUM", "4").toInt
+  private val isSkipTxTest: Boolean = sys.env.getOrElse("SKIP_TX_TEST", "true").toBoolean
+
+  private val channel: ManagedChannel = ManagedChannelBuilder.forAddress(grpcHost, grpcPort).usePlaintext(true).build()
+  private val commandGrpc: CommandServiceGrpc.CommandServiceBlockingStub = CommandServiceGrpc.blockingStub(channel)
+  private val queryGrpc: QueryServiceGrpc.QueryServiceBlockingClient = QueryServiceGrpc.blockingStub(channel)
 
   describe("IrohaSpec") {
-    it("sign and verify run right") {
+    it("sign and verify run right with create new key pair") {
+      val sha3_256 = new SHA3.Digest256()
+      val message = "This is test string".getBytes()
+      val messageHash = sha3_256.digest(message)
+
       val keyPair = Iroha.createNewKeyPair()
       val keyPair2 = keyPair.toHex.toKey
-      val message = "This is test string".getBytes()
 
+      // sign by keyPair and verify by keyPair
+      assert(Iroha.verify(keyPair, Iroha.sign(keyPair, messageHash), messageHash), true)
+
+      // sign by keyPair and verify by keyPair2
+      assert(Iroha.verify(keyPair2, Iroha.sign(keyPair, messageHash), messageHash), true)
+    }
+
+    it("sign and verify run right with load from private key") {
       val sha3_256 = new SHA3.Digest256()
-      val hash = sha3_256.digest(message)
-      assert(Iroha.verify(keyPair, Iroha.sign(keyPair, hash), hash), true)
-      assert(Iroha.verify(keyPair2, Iroha.sign(keyPair, hash), hash), true)
+      val message = "This is test string".getBytes()
+      val messageHash = sha3_256.digest(message)
+
+      val priHex = "a7ffc6f8bf1ed76651c14756a061d662f580ff4de43b49fa82d80a4b80f8434a"
+      val pubHex = "b89e03b83bdcfde56d56b9fdb99a12c7f33c5032e787ba4af4a297b7782d24ed"
+
+      val sha3_512 = new SHA3.Digest512()
+      val priHash = sha3_512.digest(Utils.hexToBytes(priHex))
+      val keyPair = Iroha.createKeyPairFromBytes(priHash)
+      val keyPair2 = keyPair.toHex.toKey
+      assert(keyPair.toHex.publicKey == pubHex)
+
+      // sign by keyPair and verify by keyPair
+      assert(Iroha.verify(keyPair, Iroha.sign(keyPair, messageHash), messageHash), true)
+
+      // sign by keyPair and verify by keyPair2
+      assert(Iroha.verify(keyPair2, Iroha.sign(keyPair, messageHash), messageHash), true)
     }
 
     def sendTransaction(tx: Transaction): Unit = {
@@ -51,65 +77,71 @@ class IrohaSpec extends FunSpec {
 
     it("tx and query run right") {
       if (!isSkipTxTest) {
-
-        val domain = IrohaDomainName("test")
+        val domain = IrohaDomainName("test.domain")
         val adminName = IrohaAccountName("admin")
-        val user1Name = IrohaAccountName("test-user-1-abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxz")
-        val user2Name = IrohaAccountName("test-user-2")
+        val user1Name = IrohaAccountName("testuser1")
+        val user2Name = IrohaAccountName("testuser2")
         val assetName = IrohaAssetName("coina")
         val adminId = IrohaAccountId(adminName, domain)
         val user1Id = IrohaAccountId(user1Name, domain)
         val user2Id = IrohaAccountId(user2Name, domain)
         val assetId = IrohaAssetId(assetName, domain)
 
-        val adminKeyPair = Iroha.createKeyPairFromHex(
-          "881e179b8d6900f892b43c7010c77e47731711735dae462ba9a8d12a9d956e58ab5bce5597a9914b0a743fccd3c56e521c1b59d73391d8ae33cc3667c5068539"
-        )
-
-        val roleName = "test_role"
-        // TODO: なぜか 04 08 1a で送ってるのが、サーバー側で04 1a 08でhexstring化されるのでハッシュが狂う
-        //sendTransaction(Iroha.CommandService.createRole(adminId, adminKeyPair, roleName, rolePermissions))
-
-        // ugly hack
-        sendTransaction(Iroha.CommandService.createRole(adminId, adminKeyPair, roleName, Seq(RolePermission.can_add_signatory)))
-        sendTransaction(Iroha.CommandService.createRole(adminId, adminKeyPair, roleName, Seq(RolePermission.can_remove_signatory)))
-        sendTransaction(Iroha.CommandService.createRole(adminId, adminKeyPair, roleName, Seq(RolePermission.can_grant_set_quorum)))
+        val privateHex = "1d7e0a32ee0affeb4d22acd73c2c6fb6bd58e266c8c2ce4fa0ffe3dd6a253ffb"
+        val publicHex  = "407e57f50ca48969b08ba948171bb2435e035d82cec417e18e4a38f5fb113f83"
+        val adminKeyPair = Iroha.createKeyPairFromBytes(new SHA3.Digest512().digest(Utils.hexToBytes(privateHex)))
+        assert(adminKeyPair.toHex.publicKey == publicHex)
 
         val user1keyPair = Iroha.createNewKeyPair()
         val user2keyPair = Iroha.createNewKeyPair()
-
-        sendTransaction(Iroha.CommandService.createAccount(adminId, adminKeyPair, user1keyPair.publicKey, user1Name, domain))
-
-        sendTransaction(Iroha.CommandService.createAccount(adminId, adminKeyPair, user2keyPair.publicKey, user2Name, domain))
-
-        sendTransaction(Iroha.CommandService.appendRole(adminId, adminKeyPair, user1Id, "money_creator"))
-
-        sendTransaction(Iroha.CommandService.appendRole(adminId, adminKeyPair, user2Id, "money_creator"))
+        println(user1keyPair.toHex.publicKey)
 
         val precision = IrohaAssetPrecision(3) // 小数点以下の桁数
+
+        // 2
+        sendTransaction(Iroha.CommandService.createAccount(adminId, adminKeyPair, user1keyPair.publicKey, user1Name, domain))
+
+        // 3
+        sendTransaction(Iroha.CommandService.createAccount(adminId, adminKeyPair, user2keyPair.publicKey, user2Name, domain))
+
+        // 4
+        sendTransaction(Iroha.CommandService.appendRole(adminId, adminKeyPair, user1Id, "money_creator"))
+
+        // 5
+        sendTransaction(Iroha.CommandService.appendRole(adminId, adminKeyPair, user2Id, "money_creator"))
+
+        // 6
         sendTransaction(Iroha.CommandService.createAsset(adminId, adminKeyPair, assetName, domain, precision))
 
+        // 7
         // creatorとuserは同じじゃないとダメ
         sendTransaction(Iroha.CommandService.addAssetQuantity(adminId, adminKeyPair, adminId, assetId, IrohaAmount(Some(uint256(0L, 0L, 0L, Long.MaxValue)), precision)))
 
+        // 8
         // creatorとuserは同じじゃないとダメ
         sendTransaction(Iroha.CommandService.addAssetQuantity(user1Id, user1keyPair, user1Id, assetId, IrohaAmount(Some(uint256(0L, 0L, 0L, 123456L)), precision)))
 
+        // 9
         // creatorとuserは同じじゃないとダメ
         sendTransaction(Iroha.CommandService.addAssetQuantity(user2Id, user2keyPair, user2Id, assetId, IrohaAmount(Some(uint256(0L, 0L, 0L, 111111L)), precision)))
 
         // creatorとuserは同じじゃないとダメ
         val user1keyPair2 = Iroha.createNewKeyPair()
+        // 10
         sendTransaction(Iroha.CommandService.addSignatory(user1Id, user1keyPair, user1Id, user1keyPair2.publicKey))
 
+        // 11
         sendTransaction(Iroha.CommandService.removeSignatory(user1Id, user1keyPair, user1Id, user1keyPair.publicKey))
 
         // creatorとuserは同じじゃないとダメ
         val user2keyPair2 = Iroha.createNewKeyPair()
+        // 12
         sendTransaction(Iroha.CommandService.addSignatory(user2Id, user2keyPair, user2Id, user2keyPair2.publicKey))
 
+        // 13
         sendTransaction(Iroha.CommandService.removeSignatory(user2Id, user2keyPair, user2Id, user2keyPair.publicKey))
 
+        // 14
         sendTransaction(Iroha.CommandService.transferAsset(user1Id, user1keyPair2, user1Id, user2Id, assetId, "purpose", IrohaAmount(Some(uint256(0, 0, 0, 10010L)), precision)))
 
         // 正しいノードを登録する。
@@ -174,10 +206,10 @@ class IrohaSpec extends FunSpec {
         assert(queryRes6.response.accountAssetsResponse.get.accountAsset.get.balance.get == Amount(Some(uint256(0L, 0L, 0L, 121121L)), precision.value))
 
         // TODO: いまはsender_idでしか検索できないためこのテストは実行しない。
-//        val queryRes7 = sendQuery(Iroha.QueryService.getAccountAssetTransactions(user2Id, user2keyPair2, user2Id, assetId))
-//        assert(queryRes7.response.isTransactionsResponse)
-//        assert(queryRes7.response.transactionsResponse.isDefined)
-//        assert(queryRes7.response.transactionsResponse.get.transactions.length == 1)
+        val queryRes7 = sendQuery(Iroha.QueryService.getAccountAssetTransactions(user2Id, user2keyPair2, user2Id, assetId))
+        assert(queryRes7.response.isTransactionsResponse)
+        assert(queryRes7.response.transactionsResponse.isDefined)
+        assert(queryRes7.response.transactionsResponse.get.transactions.length == 1)
 
         val queryRes8 = sendQuery(Iroha.QueryService.getAccountTransactions(user2Id, user2keyPair2, user2Id))
         assert(queryRes8.response.isTransactionsResponse)
