@@ -1,21 +1,5 @@
 package net.cimadai.iroha
 
-import java.util.concurrent.atomic.AtomicLong
-
-import com.google.protobuf.ByteString
-import iroha.network.proto.loader.BlocksRequest
-import iroha.protocol.block.Transaction
-import iroha.protocol.commands.Command
-import iroha.protocol.commands.Command.Command._
-import iroha.protocol.endpoint.TxStatusRequest
-import iroha.protocol.primitive._
-import iroha.protocol.queries.Query
-import iroha.protocol.{commands, queries}
-import net.cimadai.crypto.{SHA3EdDSAParameterSpec, SHA3EdDSAPrivateKeySpec}
-import net.i2p.crypto.eddsa.spec.EdDSAPublicKeySpec
-import net.i2p.crypto.eddsa.{EdDSAEngine, EdDSAPrivateKey, EdDSAPublicKey, Utils}
-import org.bouncycastle.jcajce.provider.digest.SHA3
-
 /**
   * Copyright Daisuke SHIMADA All Rights Reserved.
   * https://github.com/cimadai/iroha-scala
@@ -30,7 +14,22 @@ import org.bouncycastle.jcajce.provider.digest.SHA3
   * limitations under the License.
   */
 
-case class ValidationError(reason: String)
+import java.util.concurrent.atomic.AtomicLong
+
+import com.google.protobuf.ByteString
+import iroha.protocol.block.Transaction
+import iroha.protocol.commands.Command
+import iroha.protocol.commands.Command.Command._
+import iroha.protocol.endpoint.TxStatusRequest
+import iroha.protocol.primitive._
+import iroha.protocol.queries.Query
+import iroha.protocol.{commands, queries}
+import net.cimadai.crypto.{SHA3EdDSAParameterSpec, SHA3EdDSAPrivateKeySpec}
+import net.i2p.crypto.eddsa.spec.EdDSAPublicKeySpec
+import net.i2p.crypto.eddsa.{EdDSAEngine, EdDSAPrivateKey, EdDSAPublicKey, Utils}
+import org.bouncycastle.jcajce.provider.digest.SHA3
+
+import scala.language.postfixOps
 
 object Iroha {
   val txCounter = new AtomicLong(1)
@@ -74,23 +73,23 @@ object Iroha {
   }
 
   case class IrohaDomainName(value: String) {
-    assert(0 < value.length && value.length <= 64, "domainName length must be between 1 to 64")
-    assert(isValidDomain(value), "domainName must be only alphabet or number")
+    assert(0 < value.length && value.length <= 164, "domainName length must be between 1 to 164")
+    assert(IrohaValidator.isValidDomain(value), "domainName must satisfy the domain specifications (RFC1305).")
   }
 
   case class IrohaAssetName(value: String) {
-    assert(0 < value.length && value.length <= 10, "assetName length must be between 1 to 10")
-    assert(isAlphabetAndNumber(value), "assetName must be only alphabet or number")
+    assert(0 < value.length && value.length <= 9, "assetName length must be between 1 to 9")
+    assert(IrohaValidator.isAlphabetAndNumber(value), "assetName must be only alphabet or number. [a-zA-Z0-9]")
   }
 
   case class IrohaAccountName(value: String) {
     assert(0 < value.length && value.length <= 32, "accountName length must be between 1 to 32")
-    assert(isValidName(value), "accountName must be only alphabet or number or hyphen")
+    assert(IrohaValidator.isValidDomain(value), "accountName must satisfy the domain specifications (RFC1305).")
   }
 
   case class IrohaRoleName(value: String) {
-    assert(0 < value.length && value.length <= 8, "roleName length must be between 1 to 8")
-    assert(isAlphabetAndNumber(value), "roleName must be only alphabet or number")
+    assert(0 < value.length && value.length <= 7, "roleName length must be between 1 to 7")
+    assert(IrohaValidator.isAlphabetAndNumber(value) && IrohaValidator.isLowerCase(value), "roleName must be only lower alphabet. [a-z]")
   }
 
   case class IrohaAssetPrecision(value: Int) {
@@ -116,18 +115,6 @@ object Iroha {
         (v.first + v.second + v.third + v.fourth) >= 0
     }
     assert(isZeroOrPositive, "amount must be greater equal than 0")
-  }
-
-  // This emulates std::alnum.
-  private def isAlphabetAndNumber(str: String): Boolean = {
-    str.matches("""^[a-zA-Z_0-9]+$""")
-  }
-
-  private def isValidDomain(str: String): Boolean = {
-    str.matches("""^[a-zA-Z0-9][a-zA-Z0-9-]{1,61}[a-zA-Z0-9]\.[a-zA-Z]{2,}$""")
-  }
-  private def isValidName(str: String): Boolean = {
-    str.matches("""^[a-zA-Z0-9][a-zA-Z0-9-]{1,32}$""")
   }
 
   private val spec = new SHA3EdDSAParameterSpec
@@ -172,7 +159,7 @@ object Iroha {
       new SHA3.Digest256().digest(transaction.payload.get.toByteArray)
     }
 
-    def createTransaction(creatorAccountId: IrohaAccountId, creatorKeyPair: Ed25519KeyPair, commands: Seq[Command], txCounter: Long = Iroha.txCounter.getAndIncrement()) = {
+    def createTransaction(creatorAccountId: IrohaAccountId, creatorKeyPair: Ed25519KeyPair, commands: Seq[Command], txCounter: Long = Iroha.txCounter.getAndIncrement()): Transaction = {
       val payload = Transaction.Payload(
         commands = commands,
         creatorAccountId = creatorAccountId.toString,
@@ -287,11 +274,4 @@ object Iroha {
     }
 
   }
-
-  object Loader {
-    def blockRequest(height: Long = 0L): BlocksRequest = {
-      BlocksRequest(height)
-    }
-  }
-
 }
