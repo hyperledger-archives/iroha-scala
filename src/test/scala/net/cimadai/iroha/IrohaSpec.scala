@@ -111,12 +111,16 @@ class IrohaSpec extends FunSpec {
       futures.foreach(f => assert(Await.result(f, Duration.Inf), true))
     }
 
+    def createRandomName(length: Int): String = {
+      "z" + Random.alphanumeric.take(length - 1).mkString.toLowerCase
+    }
+
     it("ask transaction status") {
       if (!isSkipTxTest) {
         val domain = IrohaDomainName("test.domain")
         val adminName = IrohaAccountName("admin")
         val adminId = IrohaAccountId(adminName, domain)
-        val user1Name = IrohaAccountName(Random.alphanumeric.take(10).mkString.toLowerCase)
+        val user1Name = IrohaAccountName(createRandomName(10))
         val privateHex = "1d7e0a32ee0affeb4d22acd73c2c6fb6bd58e266c8c2ce4fa0ffe3dd6a253ffb"
         val publicHex = "407e57f50ca48969b08ba948171bb2435e035d82cec417e18e4a38f5fb113f83"
         val adminKeyPair = Iroha.createKeyPairFromBytes(new SHA3.Digest512().digest(Utils.hexToBytes(privateHex)))
@@ -134,9 +138,9 @@ class IrohaSpec extends FunSpec {
       if (!isSkipTxTest) {
         val domain = IrohaDomainName("test.domain")
         val adminName = IrohaAccountName("admin")
-        val user1Name = IrohaAccountName(Random.alphanumeric.take(10).mkString.toLowerCase)
-        val user2Name = IrohaAccountName(Random.alphanumeric.take(10).mkString.toLowerCase)
-        val assetName = IrohaAssetName(Random.alphanumeric.take(8).mkString.toLowerCase)
+        val user1Name = IrohaAccountName(createRandomName(10))
+        val user2Name = IrohaAccountName(createRandomName(10))
+        val assetName = IrohaAssetName(createRandomName(8))
         val adminId = IrohaAccountId(adminName, domain)
         val user1Id = IrohaAccountId(user1Name, domain)
         val user2Id = IrohaAccountId(user2Name, domain)
