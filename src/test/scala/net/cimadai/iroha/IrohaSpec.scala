@@ -18,8 +18,8 @@ import scala.util.Random
 import scala.concurrent.ExecutionContext.Implicits.global
 
 class IrohaSpec extends FunSpec {
-  private val grpcHost: String = sys.env.getOrElse("GRPC_HOST", "192.168.99.100")
-  private val grpcPort: Int = sys.env.getOrElse("GRPC_PORT", "31187").toInt
+  private val grpcHost: String = sys.env.getOrElse("GRPC_HOST", "127.0.0.1")
+  private val grpcPort: Int = sys.env.getOrElse("GRPC_PORT", "50051").toInt
   private val nodeNum: Int = sys.env.getOrElse("NODE_NUM", "4").toInt
   private val isSkipTxTest: Boolean = sys.env.getOrElse("SKIP_TX_TEST", "true").toBoolean
 
