@@ -28,6 +28,13 @@ class IrohaSpec extends FunSpec {
   private val queryGrpc: QueryServiceGrpc.QueryServiceBlockingClient = QueryServiceGrpc.blockingStub(channel)
 
   describe("IrohaSpec") {
+    it("domain validator") {
+      assert(IrohaValidator.DomainParser("abc").isRight, true)
+      assert(IrohaValidator.DomainParser("abc.xx").isRight, true)
+      assert(IrohaValidator.DomainParser("abc.xx.yy").isRight, true)
+      assert(IrohaValidator.DomainParser("abc.xx.yy.zz").isRight, true)
+    }
+
     it("sign and verify run right with create new key pair") {
       val sha3_256 = new SHA3.Digest256()
       val message = "This is test string".getBytes()
