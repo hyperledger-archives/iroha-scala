@@ -66,7 +66,8 @@ object Iroha {
     private val sKey = new EdDSAPrivateKey(SHA3EdDSAPrivateKeySpec(spec, privateKeyBytes))
     private val pKey = new EdDSAPublicKey(new EdDSAPublicKeySpec(sKey.toPublicKeyBytes, spec))
 
-    def publicKey: String = sKey.toPublicKeyHex
+    val publicKey: String = sKey.toPublicKeyHex
+    val privateKey: String = sKey.toPrivateKeyHex
 
     def toKey: Ed25519KeyPair =
       Ed25519KeyPair(sKey, pKey)
@@ -167,7 +168,11 @@ object Iroha {
   }
 
   object CommandService {
-    private def createTransaction(creatorAccountId: IrohaAccountId, creatorKeyPair: Ed25519KeyPair, commands: Seq[Command]): Transaction = {
+    private def txHash(transaction: Transaction): Array[Byte] = {
+      new SHA3.Digest256().digest(transaction.payload.get.toByteArray)
+    }
+
+    def createTransaction(creatorAccountId: IrohaAccountId, creatorKeyPair: Ed25519KeyPair, commands: Seq[Command]): Transaction = {
       val payload = Transaction.Payload(
         commands = commands,
         creatorAccountId = creatorAccountId.toString,
@@ -183,85 +188,52 @@ object Iroha {
       Transaction(Some(payload), Seq(sig))
     }
 
-    def txHash(transaction: Transaction): Array[Byte] = {
-      new SHA3.Digest256().digest(transaction.payload.get.toByteArray)
-    }
+    def appendRole(accountId: IrohaAccountId, roleName: String): Command =
+      Command(AppendRole(commands.AppendRole(accountId.toString, roleName)))
 
-    def appendRole(creatorAccountId: IrohaAccountId, creatorKeyPair: Ed25519KeyPair, accountId: IrohaAccountId, roleName: String): Transaction = {
-      val command = Command(AppendRole(commands.AppendRole(accountId.toString, roleName)))
-      createTransaction(creatorAccountId, creatorKeyPair, Seq(command))
-    }
+    def createRole(roleName: String, permissions: Seq[RolePermission]): Command =
+      Command(CreateRole(commands.CreateRole(roleName, permissions)))
 
-    def createRole(creatorAccountId: IrohaAccountId, creatorKeyPair: Ed25519KeyPair, roleName: String, permissions: Seq[RolePermission]): Transaction = {
-      val command = Command(CreateRole(commands.CreateRole(roleName, permissions)))
-      createTransaction(creatorAccountId, creatorKeyPair, Seq(command))
-    }
+    def grantPermission(accountId: IrohaAccountId, permissions: GrantablePermission): Command =
+      Command(GrantPermission(commands.GrantPermission(accountId.toString, permissions)))
 
-    def grantPermission(creatorAccountId: IrohaAccountId, creatorKeyPair: Ed25519KeyPair, accountId: IrohaAccountId, permissions: GrantablePermission): Transaction = {
-      val command = Command(GrantPermission(commands.GrantPermission(accountId.toString, permissions)))
-      createTransaction(creatorAccountId, creatorKeyPair, Seq(command))
-    }
+    def revokePermission(accountId: IrohaAccountId, permissions: GrantablePermission): Command =
+      Command(RevokePermission(commands.RevokePermission(accountId.toString, permissions)))
 
-    def revokePermission(creatorAccountId: IrohaAccountId, creatorKeyPair: Ed25519KeyPair, accountId: IrohaAccountId, permissions: GrantablePermission): Transaction = {
-      val command = Command(RevokePermission(commands.RevokePermission(accountId.toString, permissions)))
-      createTransaction(creatorAccountId, creatorKeyPair, Seq(command))
-    }
+    def addAssetQuantity(accountId: IrohaAccountId, assetId: IrohaAssetId, amount: IrohaAmount): Command =
+      Command(AddAssetQuantity(commands.AddAssetQuantity(accountId.toString, assetId.toString, Some(Amount(amount.value, amount.precision.value)))))
 
-    def addAssetQuantity(creatorAccountId: IrohaAccountId, creatorKeyPair: Ed25519KeyPair, accountId: IrohaAccountId, assetId: IrohaAssetId, amount: IrohaAmount): Transaction = {
-      val command = Command(AddAssetQuantity(commands.AddAssetQuantity(accountId.toString, assetId.toString, Some(Amount(amount.value, amount.precision.value)))))
-      createTransaction(creatorAccountId, creatorKeyPair, Seq(command))
-    }
+    def addPeer(address: String, peerKey: EdDSAPublicKey): Command =
+      Command(AddPeer(commands.AddPeer(address, ByteString.copyFrom(peerKey.toPublicKeyBytes))))
 
-    def addPeer(creatorAccountId: IrohaAccountId, creatorKeyPair: Ed25519KeyPair, address: String, peerKey: EdDSAPublicKey): Transaction = {
-      val command = Command(AddPeer(commands.AddPeer(address, ByteString.copyFrom(peerKey.toPublicKeyBytes))))
-      createTransaction(creatorAccountId, creatorKeyPair, Seq(command))
-    }
+    def addSignatory(accountId: IrohaAccountId, publicKey: EdDSAPublicKey): Command =
+      Command(AddSignatory(commands.AddSignatory(accountId.toString, ByteString.copyFrom(publicKey.toPublicKeyBytes))))
 
-    def addSignatory(creatorAccountId: IrohaAccountId, creatorKeyPair: Ed25519KeyPair, accountId: IrohaAccountId, publicKey: EdDSAPublicKey): Transaction = {
-      val command = Command(AddSignatory(commands.AddSignatory(accountId.toString, ByteString.copyFrom(publicKey.toPublicKeyBytes))))
-      createTransaction(creatorAccountId, creatorKeyPair, Seq(command))
-    }
+    def createAccount(publicKey: EdDSAPublicKey, accountName: IrohaAccountName, domainName: IrohaDomainName): Command =
+      Command(CreateAccount(commands.CreateAccount(accountName.value, domainName.value, mainPubkey = ByteString.copyFrom(publicKey.toPublicKeyBytes))))
 
-    def createAccount(creatorAccountId: IrohaAccountId, creatorKeyPair: Ed25519KeyPair, publicKey: EdDSAPublicKey, accountName: IrohaAccountName, domainName: IrohaDomainName): Transaction = {
-      val command = Command(CreateAccount(commands.CreateAccount(accountName.value, domainName.value, mainPubkey = ByteString.copyFrom(publicKey.toPublicKeyBytes))))
-      createTransaction(creatorAccountId, creatorKeyPair, Seq(command))
-    }
+    def createAsset(assetName: IrohaAssetName, domainName: IrohaDomainName, precision: IrohaAssetPrecision): Command =
+      Command(CreateAsset(commands.CreateAsset(assetName.value, domainName.value, precision.value)))
 
-    def createAsset(creatorAccountId: IrohaAccountId, creatorKeyPair: Ed25519KeyPair, assetName: IrohaAssetName, domainName: IrohaDomainName, precision: IrohaAssetPrecision): Transaction = {
-      val command = Command(CreateAsset(commands.CreateAsset(assetName.value, domainName.value, precision.value)))
-      createTransaction(creatorAccountId, creatorKeyPair, Seq(command))
-    }
+    def createDomain(domainName: IrohaDomainName): Command =
+      Command(CreateDomain(commands.CreateDomain(domainName.value)))
 
-    def createDomain(creatorAccountId: IrohaAccountId, creatorKeyPair: Ed25519KeyPair, domainName: IrohaDomainName): Transaction = {
-      val command = Command(CreateDomain(commands.CreateDomain(domainName.value)))
-      createTransaction(creatorAccountId, creatorKeyPair, Seq(command))
-    }
+    def removeSignatory(accountId: IrohaAccountId, publicKey: EdDSAPublicKey): Command =
+      Command(RemoveSign(commands.RemoveSignatory(accountId.toString, ByteString.copyFrom(publicKey.toPublicKeyBytes))))
 
-    def removeSignatory(creatorAccountId: IrohaAccountId, creatorKeyPair: Ed25519KeyPair, accountId: IrohaAccountId, publicKey: EdDSAPublicKey): Transaction = {
-      val command = Command(RemoveSign(commands.RemoveSignatory(accountId.toString, ByteString.copyFrom(publicKey.toPublicKeyBytes))))
-      createTransaction(creatorAccountId, creatorKeyPair, Seq(command))
-    }
+    def setQuorum(accountId: IrohaAccountId, quorum: Int): Command =
+      Command(SetQuorum(commands.SetAccountQuorum(accountId.toString, quorum)))
 
-    def setQuorum(creatorAccountId: IrohaAccountId, creatorKeyPair: Ed25519KeyPair, accountId: IrohaAccountId, quorum: Int): Transaction = {
-      val command = Command(SetQuorum(commands.SetAccountQuorum(accountId.toString, quorum)))
-      createTransaction(creatorAccountId, creatorKeyPair, Seq(command))
-    }
-
-    def transferAsset(creatorAccountId: IrohaAccountId, creatorKeyPair: Ed25519KeyPair, srcAccountId: IrohaAccountId, destAccountId: IrohaAccountId, assetId: IrohaAssetId, description: String, amount: IrohaAmount): Transaction = {
-      val command = Command(TransferAsset(commands.TransferAsset(
+    def transferAsset(srcAccountId: IrohaAccountId, destAccountId: IrohaAccountId, assetId: IrohaAssetId, description: String, amount: IrohaAmount): Command =
+      Command(TransferAsset(commands.TransferAsset(
         srcAccountId.toString,
         destAccountId.toString,
         assetId.toString,
         description,
         Some(Amount(amount.value, amount.precision.value)))))
-      createTransaction(creatorAccountId, creatorKeyPair, Seq(command))
-    }
-
 
     def txStatusRequest(transaction: Transaction): TxStatusRequest =
       TxStatusRequest(ByteString.copyFrom(Iroha.CommandService.txHash(transaction)))
-
-
   }
 
   object QueryService {
