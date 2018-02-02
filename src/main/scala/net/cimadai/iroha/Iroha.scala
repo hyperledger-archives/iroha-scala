@@ -33,7 +33,7 @@ import org.bouncycastle.jcajce.provider.digest.SHA3
 case class ValidationError(reason: String)
 
 object Iroha {
-  private val txCounter = new AtomicLong(1)
+  val txCounter = new AtomicLong(1)
   private val queryCounter = new AtomicLong(1)
 
   implicit class EdDSAPublicKeyExt(pub: EdDSAPublicKey) {
@@ -120,7 +120,7 @@ object Iroha {
 
   // This emulates std::alnum.
   private def isAlphabetAndNumber(str: String): Boolean = {
-    str.matches("""^[a-z_0-9]+$""")
+    str.matches("""^[a-zA-Z_0-9]+$""")
   }
 
   private def isValidDomain(str: String): Boolean = {
@@ -172,11 +172,11 @@ object Iroha {
       new SHA3.Digest256().digest(transaction.payload.get.toByteArray)
     }
 
-    def createTransaction(creatorAccountId: IrohaAccountId, creatorKeyPair: Ed25519KeyPair, commands: Seq[Command]): Transaction = {
+    def createTransaction(creatorAccountId: IrohaAccountId, creatorKeyPair: Ed25519KeyPair, commands: Seq[Command], txCounter: Long = Iroha.txCounter.getAndIncrement()) = {
       val payload = Transaction.Payload(
         commands = commands,
         creatorAccountId = creatorAccountId.toString,
-        txCounter = txCounter.getAndIncrement(),
+        txCounter,
         createdTime = System.currentTimeMillis() - 2000000) // TODO: ugly hack. irohaノードより未来のタイムスタンプを渡すと失敗する。
 
       val sha3_256 = new SHA3.Digest256()
@@ -295,4 +295,3 @@ object Iroha {
   }
 
 }
-

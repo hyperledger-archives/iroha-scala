@@ -18,8 +18,8 @@ import scala.util.Random
 import scala.concurrent.ExecutionContext.Implicits.global
 
 class IrohaSpec extends FunSpec {
-  private val grpcHost: String = sys.env.getOrElse("GRPC_HOST", "127.0.0.1")
-  private val grpcPort: Int = sys.env.getOrElse("GRPC_PORT", "50051").toInt
+  private val grpcHost: String = sys.env.getOrElse("GRPC_HOST", "192.168.99.100")
+  private val grpcPort: Int = sys.env.getOrElse("GRPC_PORT", "31187").toInt
   private val nodeNum: Int = sys.env.getOrElse("NODE_NUM", "4").toInt
   private val isSkipTxTest: Boolean = sys.env.getOrElse("SKIP_TX_TEST", "true").toBoolean
 
@@ -89,6 +89,7 @@ class IrohaSpec extends FunSpec {
 
     def isCommitted(tx: Transaction): Boolean = {
       val response = askTransactionStatus(Iroha.CommandService.txStatusRequest(tx))
+      println(s"response = ${response}")
       response.txStatus == TxStatus.COMMITTED
     }
 
@@ -266,6 +267,69 @@ class IrohaSpec extends FunSpec {
         assert(queryRes9.response.isSignatoriesResponse)
         assert(queryRes9.response.signatoriesResponse.isDefined)
         assert(queryRes9.response.signatoriesResponse.get.keys.length == 1)
+      }
+    }
+
+    it("tx_counter is to unique to each transaction creater.") {
+
+      val isSkipTxTest = false
+      if (!isSkipTxTest) {
+        val domain = IrohaDomainName("test.domain")
+        val adminName = IrohaAccountName("admin")
+        val user1Name = IrohaAccountName(s"u${Random.alphanumeric.take(9).mkString}")
+        val user2Name = IrohaAccountName(s"u${Random.alphanumeric.take(9).mkString}")
+        val assetName = IrohaAssetName(s"${Random.alphanumeric.filter(_.isLetterOrDigit).take(4).mkString}")
+        val adminId = IrohaAccountId(adminName, domain)
+        val user1Id = IrohaAccountId(user1Name, domain)
+        val user2Id = IrohaAccountId(user2Name, domain)
+        val assetId = IrohaAssetId(assetName, domain)
+
+        val privateHex = "1d7e0a32ee0affeb4d22acd73c2c6fb6bd58e266c8c2ce4fa0ffe3dd6a253ffb"
+        val publicHex = "407e57f50ca48969b08ba948171bb2435e035d82cec417e18e4a38f5fb113f83"
+        val adminKeyPair = Iroha.createKeyPairFromBytes(new SHA3.Digest512().digest(Utils.hexToBytes(privateHex)))
+        assert(adminKeyPair.toHex.publicKey == publicHex)
+
+        val user1keyPair = Iroha.createNewKeyPair()
+        val user2keyPair = Iroha.createNewKeyPair()
+        println(user1keyPair.toHex.publicKey)
+
+        val precision = IrohaAssetPrecision(3) // 小数点以下の桁数
+
+        val commands = Iterable(
+          Iroha.CommandService.createAccount(user1keyPair.publicKey, user1Name, domain),
+          Iroha.CommandService.createAccount(user2keyPair.publicKey, user2Name, domain),
+          Iroha.CommandService.appendRole(user1Id, "money_creator"),
+          Iroha.CommandService.appendRole(user2Id, "money_creator"),
+          Iroha.CommandService.createAsset(assetName, domain, precision)
+        )
+
+        val transaction = Iroha.CommandService.createTransaction(adminId, adminKeyPair, commands.toSeq)
+        sendTransaction(transaction)
+
+        val txCounter = Iroha.txCounter.getAndIncrement()
+
+        // Use the same txCounter to check if its unique to the creater.
+        val transactionForUser1 = Iroha.CommandService.createTransaction(
+          user1Id, user1keyPair,
+          Seq(Iroha.CommandService.addAssetQuantity(user1Id, assetId, IrohaAmount(Some(uint256(0L, 0L, 0L, 123456L)), precision))),
+          txCounter
+        )
+
+        val transactionForUser2 = Iroha.CommandService.createTransaction(
+          user2Id, user2keyPair,
+          Seq(Iroha.CommandService.addAssetQuantity(user2Id, assetId, IrohaAmount(Some(uint256(0L, 0L, 0L, 111111L)), precision))),
+          txCounter
+        )
+
+        val f1 = sendTransaction(transactionForUser1)
+        val f2 = sendTransaction(transactionForUser2)
+
+        val r = for {
+          r1 <- f1
+          r2 <- f2
+        } yield r1 && r2
+
+        assert(Await.result(r, Duration.Inf))
       }
     }
   }
