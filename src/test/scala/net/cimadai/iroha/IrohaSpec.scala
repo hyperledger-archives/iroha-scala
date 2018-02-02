@@ -270,8 +270,6 @@ class IrohaSpec extends FunSpec {
     }
 
     it("tx_counter is to unique to each transaction creater.") {
-
-      val isSkipTxTest = false
       if (!isSkipTxTest) {
         val domain = IrohaDomainName("test.domain")
         val adminName = IrohaAccountName("admin")
