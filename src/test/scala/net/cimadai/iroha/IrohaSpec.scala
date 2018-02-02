@@ -89,7 +89,6 @@ class IrohaSpec extends FunSpec {
 
     def isCommitted(tx: Transaction): Boolean = {
       val response = askTransactionStatus(Iroha.CommandService.txStatusRequest(tx))
-      println(s"response = ${response}")
       response.txStatus == TxStatus.COMMITTED
     }
 
@@ -291,7 +290,6 @@ class IrohaSpec extends FunSpec {
 
         val user1keyPair = Iroha.createNewKeyPair()
         val user2keyPair = Iroha.createNewKeyPair()
-        println(user1keyPair.toHex.publicKey)
 
         val precision = IrohaAssetPrecision(3) // 小数点以下の桁数
 
