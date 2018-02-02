@@ -11,7 +11,11 @@ import net.i2p.crypto.eddsa.Utils
 import org.bouncycastle.jcajce.provider.digest.SHA3
 import org.scalatest.FunSpec
 
+import scala.concurrent.duration.Duration
+import scala.concurrent.{Await, Future}
 import scala.util.Random
+
+import scala.concurrent.ExecutionContext.Implicits.global
 
 class IrohaSpec extends FunSpec {
   private val grpcHost: String = sys.env.getOrElse("GRPC_HOST", "127.0.0.1")
@@ -60,11 +64,12 @@ class IrohaSpec extends FunSpec {
       assert(Iroha.verify(keyPair2, Iroha.sign(keyPair, messageHash), messageHash), true)
     }
 
-    def sendTransaction(tx: Transaction): Unit = {
+    def sendTransaction(tx: Transaction): Future[Boolean] = {
       println("== Tx ==")
       println(tx)
       println("========")
       commandGrpc.torii(tx)
+      checkTransactionCommit(tx)
     }
 
     def askTransactionStatus(txStatusRequest: TxStatusRequest): ToriiResponse = {
@@ -82,35 +87,56 @@ class IrohaSpec extends FunSpec {
       resp
     }
 
+    def isCommitted(tx: Transaction): Boolean = {
+      val response = askTransactionStatus(Iroha.CommandService.txStatusRequest(tx))
+      response.txStatus == TxStatus.COMMITTED
+    }
+
+    def awaitUntilTransactionCommitted(tx: Transaction, counter: Int = 0): Boolean = {
+      if (counter >= 20) {
+        false
+      } else if (isCommitted(tx)) {
+        true
+      } else {
+        Thread.sleep(1000)
+        awaitUntilTransactionCommitted(tx, counter + 1)
+      }
+    }
+
+    def checkTransactionCommit(tx: Transaction): Future[Boolean] = Future {
+      awaitUntilTransactionCommitted(tx)
+    }
+
+    def assertTxFutures(futures: Iterable[Future[Boolean]]): Unit = {
+      futures.foreach(f => assert(Await.result(f, Duration.Inf), true))
+    }
+
     it("ask transaction status") {
       if (!isSkipTxTest) {
-
         val domain = IrohaDomainName("test.domain")
         val adminName = IrohaAccountName("admin")
         val adminId = IrohaAccountId(adminName, domain)
-        val user1Name = IrohaAccountName(Random.alphanumeric.take(10).mkString)
+        val user1Name = IrohaAccountName(Random.alphanumeric.take(10).mkString.toLowerCase)
         val privateHex = "1d7e0a32ee0affeb4d22acd73c2c6fb6bd58e266c8c2ce4fa0ffe3dd6a253ffb"
         val publicHex = "407e57f50ca48969b08ba948171bb2435e035d82cec417e18e4a38f5fb113f83"
         val adminKeyPair = Iroha.createKeyPairFromBytes(new SHA3.Digest512().digest(Utils.hexToBytes(privateHex)))
         assert(adminKeyPair.toHex.publicKey == publicHex)
 
         val user1keyPair = Iroha.createNewKeyPair()
-        val transaction = Iroha.CommandService.createAccount(adminId, adminKeyPair, user1keyPair.publicKey, user1Name, domain)
-        sendTransaction(transaction)
-
-        Thread.sleep(7000) // TODO: FIXME. Please fix more smart way to wait for consensus completion.
-
-        val response = askTransactionStatus(Iroha.CommandService.txStatusRequest(transaction))
-        assert(response.txStatus == TxStatus.COMMITTED)
+        val createAccount = Iroha.CommandService.createAccount(user1keyPair.publicKey, user1Name, domain)
+        val transaction = Iroha.CommandService.createTransaction(adminId, adminKeyPair, Seq(createAccount))
+        val futureCommitted = sendTransaction(transaction)
+        assert(Await.result(futureCommitted, Duration.Inf), true)
       }
     }
+
     it("tx and query run right") {
       if (!isSkipTxTest) {
         val domain = IrohaDomainName("test.domain")
         val adminName = IrohaAccountName("admin")
-        val user1Name = IrohaAccountName("testuser1")
-        val user2Name = IrohaAccountName("testuser2")
-        val assetName = IrohaAssetName("coina")
+        val user1Name = IrohaAccountName(Random.alphanumeric.take(10).mkString.toLowerCase)
+        val user2Name = IrohaAccountName(Random.alphanumeric.take(10).mkString.toLowerCase)
+        val assetName = IrohaAssetName(Random.alphanumeric.take(8).mkString.toLowerCase)
         val adminId = IrohaAccountId(adminName, domain)
         val user1Id = IrohaAccountId(user1Name, domain)
         val user2Id = IrohaAccountId(user2Name, domain)
@@ -125,64 +151,52 @@ class IrohaSpec extends FunSpec {
         val user2keyPair = Iroha.createNewKeyPair()
         println(user1keyPair.toHex.publicKey)
 
-        val precision = IrohaAssetPrecision(3) // 小数点以下の桁数
+        val precision = IrohaAssetPrecision(3) // Number of digits after the decimal point
 
-        // 2
-        sendTransaction(Iroha.CommandService.createAccount(adminId, adminKeyPair, user1keyPair.publicKey, user1Name, domain))
+        val commands1 = Seq(
+          Iroha.CommandService.createAccount(user1keyPair.publicKey, user1Name, domain),
+          Iroha.CommandService.createAccount(user2keyPair.publicKey, user2Name, domain),
+          Iroha.CommandService.appendRole(user1Id, "money_creator"),
+          Iroha.CommandService.appendRole(user2Id, "money_creator"),
+          Iroha.CommandService.createAsset(assetName, domain, precision),
+          Iroha.CommandService.addAssetQuantity(adminId, assetId, IrohaAmount(Some(uint256(0L, 0L, 0L, Long.MaxValue)), precision))
+        )
 
-        // 3
-        sendTransaction(Iroha.CommandService.createAccount(adminId, adminKeyPair, user2keyPair.publicKey, user2Name, domain))
+        val f01 = sendTransaction(Iroha.CommandService.createTransaction(adminId, adminKeyPair, commands1))
+        // wait for consensus completion
+        assertTxFutures(Iterable(f01))
 
-        // 4
-        sendTransaction(Iroha.CommandService.appendRole(adminId, adminKeyPair, user1Id, "money_creator"))
-
-        // 5
-        sendTransaction(Iroha.CommandService.appendRole(adminId, adminKeyPair, user2Id, "money_creator"))
-
-        // 6
-        sendTransaction(Iroha.CommandService.createAsset(adminId, adminKeyPair, assetName, domain, precision))
-
-        // 7
-        // creatorとuserは同じじゃないとダメ
-        sendTransaction(Iroha.CommandService.addAssetQuantity(adminId, adminKeyPair, adminId, assetId, IrohaAmount(Some(uint256(0L, 0L, 0L, Long.MaxValue)), precision)))
-
-        // 8
-        // creatorとuserは同じじゃないとダメ
-        sendTransaction(Iroha.CommandService.addAssetQuantity(user1Id, user1keyPair, user1Id, assetId, IrohaAmount(Some(uint256(0L, 0L, 0L, 123456L)), precision)))
-
-        // 9
-        // creatorとuserは同じじゃないとダメ
-        sendTransaction(Iroha.CommandService.addAssetQuantity(user2Id, user2keyPair, user2Id, assetId, IrohaAmount(Some(uint256(0L, 0L, 0L, 111111L)), precision)))
-
-        // creatorとuserは同じじゃないとダメ
         val user1keyPair2 = Iroha.createNewKeyPair()
-        // 10
-        sendTransaction(Iroha.CommandService.addSignatory(user1Id, user1keyPair, user1Id, user1keyPair2.publicKey))
+        val commands2 = Seq(
+          // Tx creator must equal addAssetQuantity target account.
+          Iroha.CommandService.addAssetQuantity(user1Id, assetId, IrohaAmount(Some(uint256(0L, 0L, 0L, 123456L)), precision)),
+          Iroha.CommandService.addSignatory(user1Id, user1keyPair2.publicKey),
+          Iroha.CommandService.removeSignatory(user1Id, user1keyPair.publicKey)
+        )
 
-        // 11
-        sendTransaction(Iroha.CommandService.removeSignatory(user1Id, user1keyPair, user1Id, user1keyPair.publicKey))
+        val f02 = sendTransaction(Iroha.CommandService.createTransaction(user1Id, user1keyPair, commands2))
 
-        // creatorとuserは同じじゃないとダメ
         val user2keyPair2 = Iroha.createNewKeyPair()
-        // 12
-        sendTransaction(Iroha.CommandService.addSignatory(user2Id, user2keyPair, user2Id, user2keyPair2.publicKey))
+        val commands3 = Seq(
+          // Tx creator must equal addAssetQuantity target account.
+          Iroha.CommandService.addAssetQuantity(user2Id, assetId, IrohaAmount(Some(uint256(0L, 0L, 0L, 111111L)), precision)),
+          Iroha.CommandService.addSignatory(user2Id, user2keyPair2.publicKey),
+          Iroha.CommandService.removeSignatory(user2Id, user2keyPair.publicKey)
+        )
 
-        // 13
-        sendTransaction(Iroha.CommandService.removeSignatory(user2Id, user2keyPair, user2Id, user2keyPair.publicKey))
-
-        // 14
-        sendTransaction(Iroha.CommandService.transferAsset(user1Id, user1keyPair2, user1Id, user2Id, assetId, "purpose", IrohaAmount(Some(uint256(0, 0, 0, 10010L)), precision)))
-
-        // 正しいノードを登録する。
-        //        val node0KeyPair = Iroha.createNewKeyPair()
-        //        val node1KeyPair = Iroha.createNewKeyPair()
-        //        sendTransaction(Iroha.CommandService.addPeer(adminId, adminKeyPair, "10.5.0.10", node0KeyPair.publicKey))
-        //        sendTransaction(Iroha.CommandService.addPeer(adminId, adminKeyPair, "10.5.0.11", node1KeyPair.publicKey))
+        val f03 = sendTransaction(Iroha.CommandService.createTransaction(user2Id, user2keyPair, commands3))
 
         // wait for consensus completion
-        if (!isSkipTxTest) {
-          Thread.sleep(10000) // TODO: FIXME. Please fix more smart way to wait for consensus completion.
-        }
+        assertTxFutures(Iterable(f02, f03))
+
+        val commands4 = Seq(
+          Iroha.CommandService.transferAsset(user1Id, user2Id, assetId, "purpose", IrohaAmount(Some(uint256(0, 0, 0, 10010L)), precision))
+        )
+
+        val f04 = sendTransaction(Iroha.CommandService.createTransaction(user1Id, user1keyPair2, commands4))
+
+        // wait for consensus completion
+        assertTxFutures(Iterable(f04))
 
         //////////////////////////////////
         val queryRes0 = sendQuery(Iroha.QueryService.getAccount(adminId, adminKeyPair, user1Id))
@@ -210,7 +224,7 @@ class IrohaSpec extends FunSpec {
         val queryRes3 = sendQuery(Iroha.QueryService.getAccountTransactions(user1Id, user1keyPair2, user1Id))
         assert(queryRes3.response.isTransactionsResponse)
         assert(queryRes3.response.transactionsResponse.isDefined)
-        assert(queryRes3.response.transactionsResponse.get.transactions.length == 4)
+        assert(queryRes3.response.transactionsResponse.get.transactions.length == 2)
 
         val queryRes4 = sendQuery(Iroha.QueryService.getSignatories(user1Id, user1keyPair2, user1Id))
         assert(queryRes4.response.isSignatoriesResponse)
@@ -234,7 +248,6 @@ class IrohaSpec extends FunSpec {
         assert(queryRes6.response.accountAssetsResponse.get.accountAsset.get.balance.isDefined)
         assert(queryRes6.response.accountAssetsResponse.get.accountAsset.get.balance.get == Amount(Some(uint256(0L, 0L, 0L, 121121L)), precision.value))
 
-        // TODO: いまはsender_idでしか検索できないためこのテストは実行しない。
         val queryRes7 = sendQuery(Iroha.QueryService.getAccountAssetTransactions(user2Id, user2keyPair2, user2Id, assetId))
         assert(queryRes7.response.isTransactionsResponse)
         assert(queryRes7.response.transactionsResponse.isDefined)
@@ -243,7 +256,7 @@ class IrohaSpec extends FunSpec {
         val queryRes8 = sendQuery(Iroha.QueryService.getAccountTransactions(user2Id, user2keyPair2, user2Id))
         assert(queryRes8.response.isTransactionsResponse)
         assert(queryRes8.response.transactionsResponse.isDefined)
-        assert(queryRes8.response.transactionsResponse.get.transactions.length == 3)
+        assert(queryRes8.response.transactionsResponse.get.transactions.length == 1)
 
         val queryRes9 = sendQuery(Iroha.QueryService.getSignatories(user2Id, user2keyPair2, user2Id))
         assert(queryRes9.response.isSignatoriesResponse)
