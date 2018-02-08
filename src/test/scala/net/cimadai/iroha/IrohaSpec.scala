@@ -11,11 +11,10 @@ import net.i2p.crypto.eddsa.Utils
 import org.bouncycastle.jcajce.provider.digest.SHA3
 import org.scalatest.FunSpec
 
+import scala.concurrent.ExecutionContext.Implicits.global
 import scala.concurrent.duration.Duration
 import scala.concurrent.{Await, Future}
 import scala.util.Random
-
-import scala.concurrent.ExecutionContext.Implicits.global
 
 class IrohaSpec extends FunSpec {
   private val grpcHost: String = sys.env.getOrElse("GRPC_HOST", "127.0.0.1")
@@ -331,6 +330,41 @@ class IrohaSpec extends FunSpec {
           r1 <- f1
           r2 <- f2
         } yield r1 && r2
+
+        assert(Await.result(r, Duration.Inf))
+      }
+    }
+
+    it("adding and subtracting the same amount result in the no change in balance.") {
+      val isSkipTxTest = false
+      if (!isSkipTxTest) {
+        val domain = IrohaDomainName("test.domain")
+        val adminId = IrohaAccountId(IrohaAccountName("admin"), domain)
+        val privateHex = "1d7e0a32ee0affeb4d22acd73c2c6fb6bd58e266c8c2ce4fa0ffe3dd6a253ffb"
+        val adminKeyPair = Iroha.createKeyPairFromBytes(new SHA3.Digest512().digest(Utils.hexToBytes(privateHex)))
+        val assetName = IrohaAssetName(s"${Random.alphanumeric.filter(_.isLetterOrDigit).take(4).mkString}")
+        val assetId = IrohaAssetId(assetName, domain)
+        val precision = IrohaAssetPrecision(3) // 小数点以下の桁数
+
+        val amount = IrohaAmount(Some(uint256(0L, 0L, 111L)), precision)
+
+        val commands = Seq(
+          Iroha.CommandService.createAsset(assetName, domain, precision),
+          Iroha.CommandService.addAssetQuantity(adminId, assetId, amount),
+          Iroha.CommandService.subtractAssetQuantity(adminId, assetId, amount)
+        )
+
+        val r = sendTransaction(Iroha.CommandService.createTransaction(adminId, adminKeyPair, commands, Iroha.txCounter.getAndIncrement()))
+          .map(
+            _ => sendQuery(Iroha.QueryService.getAccountAssets(adminId, adminKeyPair, adminId, assetId))
+          )
+          .map(qr => (for {
+            response <- qr.response.accountAssetsResponse
+            asset <- response.accountAsset
+            balance <- asset.balance
+          } yield balance == Amount(Some(uint256()), balance.precision)
+            ).getOrElse(false)
+          )
 
         assert(Await.result(r, Duration.Inf))
       }
