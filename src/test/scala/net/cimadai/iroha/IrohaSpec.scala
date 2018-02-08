@@ -336,7 +336,6 @@ class IrohaSpec extends FunSpec {
     }
 
     it("adding and subtracting the same amount result in the no change in balance.") {
-      val isSkipTxTest = false
       if (!isSkipTxTest) {
         val domain = IrohaDomainName("test.domain")
         val adminId = IrohaAccountId(IrohaAccountName("admin"), domain)
