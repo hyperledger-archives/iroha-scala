@@ -211,6 +211,9 @@ object Iroha {
     def setQuorum(accountId: IrohaAccountId, quorum: Int): Command =
       Command(SetQuorum(commands.SetAccountQuorum(accountId.toString, quorum)))
 
+    def subtractAssetQuantity(accountId: IrohaAccountId, assetId: IrohaAssetId, amount: IrohaAmount): Command =
+      Command(SubtractAssetQuantity(commands.SubtractAssetQuantity(accountId.toString, assetId.toString, Some(Amount(amount.value, amount.precision.value)))))
+
     def transferAsset(srcAccountId: IrohaAccountId, destAccountId: IrohaAccountId, assetId: IrohaAssetId, description: String, amount: IrohaAmount): Command =
       Command(TransferAsset(commands.TransferAsset(
         srcAccountId.toString,
