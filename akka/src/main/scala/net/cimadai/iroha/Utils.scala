@@ -1,9 +1,7 @@
 package net.cimadai.iroha
 
-import java.security.{KeyPair, MessageDigest, PrivateKey, PublicKey}
-import java.util.stream.{Collectors, StreamSupport}
+import java.security.{KeyPair, PrivateKey, PublicKey}
 
-import iroha.protocol.Block.BlockVersion.BlockV1
 import iroha.protocol.Transaction.Payload
 import iroha.protocol.Transaction.Payload.BatchMeta.BatchType
 import iroha.protocol.{Block, Block_v1, Query, Signature, Transaction, TxList, TxStatusRequest}
@@ -12,6 +10,7 @@ import javax.xml.bind.DatatypeConverter
 import javax.xml.bind.DatatypeConverter.parseHexBinary
 import jp.co.soramitsu.crypto.ed25519.Ed25519Sha3
 import jp.co.soramitsu.crypto.ed25519.Ed25519Sha3.{privateKeyFromBytes, publicKeyFromBytes}
+import org.spongycastle.jcajce.provider.digest.SHA3
 
 /**
   * Scala version of https://github.com/hyperledger/iroha-java/blob/master/client/src/main/java/jp/co/soramitsu/iroha/java/Utils.java
@@ -56,12 +55,12 @@ object Utils {
   /**
     * Calculate SHA3-256 hash of {@link iroha.protocol.Transaction.Payload.ReducedPayload}
     *
-    * @param reducedPayload Protobuf of ReducedPayload
+    * @param rp Protobuf of ReducedPayload
     * @return 32 bytes hash
     */
-  def reducedHash(reducedPayload: ReducedPayload): Array[Byte] = {
-    MessageDigest.getInstance("SHA-256")
-      .digest(reducedPayload.toByteArray)
+  def reducedHash(rp: ReducedPayload): Array[Byte] = {
+    val digest = new SHA3.Digest256()
+    digest.digest(rp.toByteArray)
   }
 
   /**
@@ -71,8 +70,8 @@ object Utils {
     * @return 32 bytes hash
     */
   def hash(p: Payload): Array[Byte] = {
-    MessageDigest.getInstance("SHA-256")
-      .digest(p.toByteArray)
+    val digest = new SHA3.Digest256()
+    digest.digest(p.toByteArray)
   }
 
   /**
@@ -82,8 +81,8 @@ object Utils {
     * @return 32 bytes hash
     */
   def hash(tx: Transaction): Array[Byte] = {
-    MessageDigest.getInstance("SHA-256")
-      .digest(tx.getPayload.toByteArray)
+    val digest = new SHA3.Digest256()
+    digest.digest(tx.getPayload.toByteArray)
   }
 
   /**
@@ -93,8 +92,8 @@ object Utils {
     * @return 32 bytes hash
     */
   def hash(b: Block_v1): Array[Byte] = {
-    MessageDigest.getInstance("SHA-256")
-      .digest(b.getPayload.toByteArray)
+    val digest = new SHA3.Digest256()
+    digest.digest(b.getPayload.toByteArray)
   }
 
   /**
@@ -103,11 +102,11 @@ object Utils {
     * @param b Protobuf Block
     * @return 32 bytes hash
     */
-  def hash(b: Block): Array[Byte] = b.blockVersion.value match {
-    case Block.BlockVersion.BlockV1 =>
+  def hash(b: Block): Array[Byte] = b.blockVersion match {
+    case Block.BlockVersion.BlockV1(_) =>
       hash(b.getBlockV1)
     case _ =>
-      throw new IllegalArgumentException(String.format("Block has undefined version: %s", b.blockVersion.value))
+      throw new IllegalArgumentException(String.format("Block has undefined version: %s", b.blockVersion.toString))
   }
 
   /**
@@ -117,13 +116,18 @@ object Utils {
     * @return 32 bytes hash
     */
   def hash(q: Query): Array[Byte] = {
-    MessageDigest.getInstance("SHA-256")
-      .digest(q.getPayload.toByteArray)
+    val digest = new SHA3.Digest256()
+    digest.digest(q.getPayload.toByteArray)
   }
 
   def sign(t: Payload, kp: KeyPair): Signature = {
     val rawSignature = new Ed25519Sha3().rawSign(hash(t), kp)
-    Signature(Utils.toHex(rawSignature), Utils.toHex(kp.getPublic.getEncoded))
+    Signature(toHex(kp.getPublic.getEncoded), toHex(rawSignature))
+  }
+
+  def sign(t: Query, kp: KeyPair): Signature = {
+    val rawSignature = new Ed25519Sha3().rawSign(hash(t), kp)
+    Signature(toHex(kp.getPublic.getEncoded), toHex(rawSignature))
   }
 
   /**
@@ -202,7 +206,7 @@ object Utils {
   def getProtoBatchHashesHex(list: Seq[Transaction]): Seq[String] = list.map(reducedHash).map(toHex)
 
   private def createBatch(list: Seq[Transaction], batchType: BatchType, keyPair: KeyPair) = {
-    val batchHashes = getBatchHashesHex(list)
+    val batchHashes = getProtoBatchHashesHex(list)
     list.map { tx =>
       val transaction = tx.copy(
         tx.payload.map { p =>
