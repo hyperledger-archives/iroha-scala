@@ -10,7 +10,6 @@ object Monix {
     val acyclic      = "0.1.8"
     val utest        = "0.6.6"
 
-    val scalapbc     = scalapb.compiler.Version.scalapbVersion
     val grpc         = scalapb.compiler.Version.grpcJavaVersion
     val monix        = "3.0.0-RC2"
   }
@@ -27,8 +26,7 @@ object Monix {
       libraryDependencies ++=
         Seq(
           "io.grpc"                           %  "grpc-netty"           % versions.grpc,
-          "com.thesamet.scalapb"              %% "scalapb-runtime-grpc" % versions.scalapbc,
-          "com.thesamet.scalapb"              %% "scalapb-runtime-grpc" % versions.scalapbc % "protobuf",
+          "com.thesamet.scalapb"              %% "compilerplugin" % "0.8.4"
         ),
       PB.targets in Compile :=
         Seq(
