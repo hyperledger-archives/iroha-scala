@@ -2,50 +2,59 @@
 
 Scala library for [Hyperledger Iroha](https://github.com/hyperledger/iroha).
 
+## For end users
 
-## Install
+Add the following library dependency into your project:
 
-Install [sbt](http://www.scala-sbt.org/0.13/docs/Setup.html).
+```scala
+libraryDependencies += "org.hyperledger" %% "iroha-scala" % "1.06-SNAPSHOT"
+```
 
-```sh
-git clone https://github.com/hyperledger/iroha-scala.git
+----
+
+## For developers
+
+### Requirements
+
+ * JDK8+ is required
+ * integration tests require one or more Iroha nodes
+ * a snapshot build of ed25519-sha3-java
+ 
+### Building dependencies
+
+```bash
+#!/bin/bash
+
+mkdir ${HOME}/workspace
+cd ${HOME}/workspace
+git clone https://github.com/frgomes/ed25519-sha3-java
+cd ed25519-sha3-java
+git checkout RG0001-Code_review
+./sbt publishLocal
+```
+
+### Building iroha-scala
+
+```bash
+#!/bin/bash
+
+mkdir ${HOME}/workspace
+cd ${HOME}/workspace
+git clone https://github.com/frgomes/iroha-scala
 cd iroha-scala
-sbt publishLocal
+git checkout RG0001-Code_review
+./sbt compile
 ```
 
-## Usage
+### Unit tests
 
-1.  build.sbt
+```bash
+#!/bin/bash
 
-```sh
-libraryDependencies += "org.hyperledger" %% "iroha-scala" % "1.0.0"
+cd ${HOME}/workspace/iroha-scala
+$ ./sbt test
 ```
 
-## Test
+### Integration tests
 
-Test required local iroha node with gRPC(50051).
-
-```sh
-sbt test
-```
-
-## Compile proto
-```
-sbt compile
-```
-
-## License
-
-Copyright 2017 Daisuke SHIMADA.
-
-Licensed under the Apache License, Version 2.0 (the "License");
-you may not use this file except in compliance with the License.
-You may obtain a copy of the License at
-
-    http://www.apache.org/licenses/LICENSE-2.0
-
-Unless required by applicable law or agreed to in writing, software
-distributed under the License is distributed on an "AS IS" BASIS,
-WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-See the License for the specific language governing permissions and
-limitations under the License.
+TBD
