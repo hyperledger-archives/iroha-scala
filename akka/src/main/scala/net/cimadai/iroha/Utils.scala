@@ -2,13 +2,10 @@ package net.cimadai.iroha
 
 import java.security.{KeyPair, PrivateKey, PublicKey}
 
-import iroha.protocol.Transaction.Payload
-import iroha.protocol.Transaction.Payload.BatchMeta.BatchType
-import iroha.protocol.{Block, Block_v1, Query, Signature, Transaction, TxList, TxStatusRequest}
-import iroha.protocol.Transaction.Payload.{BatchMeta, ReducedPayload}
+import iroha.protocol
+import iroha.protocol.Transaction.Payload.ReducedPayload
 import javax.xml.bind.DatatypeConverter
 import javax.xml.bind.DatatypeConverter.parseHexBinary
-import jp.co.soramitsu.crypto.ed25519.Ed25519Sha3
 import jp.co.soramitsu.crypto.ed25519.Ed25519Sha3.{privateKeyFromBytes, publicKeyFromBytes}
 import org.spongycastle.jcajce.provider.digest.SHA3
 
@@ -50,7 +47,7 @@ object Utils {
     * @param tx Protobuf transaction
     * @return 32 bytes hash
     */
-  def reducedHash(tx: Transaction): Array[Byte] = reducedHash(tx.getPayload.getReducedPayload)
+  def reducedHash(tx: protocol.Transaction): Array[Byte] = reducedHash(tx.getPayload.getReducedPayload)
 
   /**
     * Calculate SHA3-256 hash of {@link iroha.protocol.Transaction.Payload.ReducedPayload}
@@ -69,9 +66,13 @@ object Utils {
     * @param p Protobuf Payload
     * @return 32 bytes hash
     */
-  def hash(p: Payload): Array[Byte] = {
+  def hash(p: protocol.Transaction.Payload): Array[Byte] = {
     val digest = new SHA3.Digest256()
     digest.digest(p.toByteArray)
+  }
+
+  def hash(p: Option[protocol.Transaction.Payload]): Array[Byte] = {
+    p.map(hash) getOrElse Array.empty[Byte]
   }
 
   /**
@@ -80,7 +81,7 @@ object Utils {
     * @param tx Protobuf Transaction
     * @return 32 bytes hash
     */
-  def hash(tx: Transaction): Array[Byte] = {
+  def hash(tx: protocol.Transaction): Array[Byte] = {
     val digest = new SHA3.Digest256()
     digest.digest(tx.getPayload.toByteArray)
   }
@@ -91,7 +92,7 @@ object Utils {
     * @param b BlockV1
     * @return 32 bytes hash
     */
-  def hash(b: Block_v1): Array[Byte] = {
+  def hash(b: protocol.Block_v1): Array[Byte] = {
     val digest = new SHA3.Digest256()
     digest.digest(b.getPayload.toByteArray)
   }
@@ -102,8 +103,8 @@ object Utils {
     * @param b Protobuf Block
     * @return 32 bytes hash
     */
-  def hash(b: Block): Array[Byte] = b.blockVersion match {
-    case Block.BlockVersion.BlockV1(_) =>
+  def hash(b: protocol.Block): Array[Byte] = b.blockVersion match {
+    case protocol.Block.BlockVersion.BlockV1(_) =>
       hash(b.getBlockV1)
     case _ =>
       throw new IllegalArgumentException(String.format("Block has undefined version: %s", b.blockVersion.toString))
@@ -115,28 +116,10 @@ object Utils {
     * @param q Protobuf Query
     * @return 32 bytes hash
     */
-  def hash(q: Query): Array[Byte] = {
+  def hash(q: protocol.Query): Array[Byte] = {
     val digest = new SHA3.Digest256()
     digest.digest(q.getPayload.toByteArray)
   }
-
-  def sign(t: Payload, kp: KeyPair): Signature = {
-    val rawSignature = new Ed25519Sha3().rawSign(hash(t), kp)
-    Signature(toHex(kp.getPublic.getEncoded), toHex(rawSignature))
-  }
-
-  def sign(t: Query, kp: KeyPair): Signature = {
-    val rawSignature = new Ed25519Sha3().rawSign(hash(t), kp)
-    Signature(toHex(kp.getPublic.getEncoded), toHex(rawSignature))
-  }
-
-  /**
-    * Helper method to create {@link TxStatusRequest} from byte array
-    *
-    * @param hash tx hash
-    * @return { @link TxStatusRequest}
-    */
-  def createTxStatusRequest(hash: Array[Byte]): TxStatusRequest = TxStatusRequest(Utils.toHex(hash))
 
   /**
     * Helper method to create {@link TxList} from Seq
@@ -144,32 +127,12 @@ object Utils {
     * @param list list of protobuf transactions
     * @return { @link TxList}
     */
-  def createTxList(list: Seq[Transaction]): TxList = TxList(list)
-
-  /**
-    * Create Ordered Batch of transactions created by single user from iterable
-    */
-  def createTxOrderedBatch(list: Seq[Transaction], keyPair: KeyPair): Seq[Transaction] = createBatch(list, BatchType.ORDERED, keyPair)
-
-  /**
-    * Create unsigned Ordered Batch of any transactions from iterable
-    */
-  def createTxUnsignedOrderedBatch(list: Seq[Transaction]): Seq[Transaction] = createBatch(list, BatchType.ORDERED)
-
-  /**
-    * Create Atomic Batch of transactions created by single user from iterable
-    */
-  def createTxAtomicBatch(list: Seq[Transaction], keyPair: KeyPair): Seq[Transaction] = createBatch(list, BatchType.ATOMIC, keyPair)
-
-  /**
-    * Create unsigned Atomic Batch of any signed transactions from iterable
-    */
-  def createTxUnsignedAtomicBatch(list: Seq[Transaction]): Seq[Transaction] = createBatch(list, BatchType.ATOMIC)
+  def createTxList(list: Seq[protocol.Transaction]): protocol.TxList = protocol.TxList(list)
 
   /**
     * Convert bytes to hexstring
     */
-  def toHex(b: Array[Byte]): String = DatatypeConverter.printHexBinary(b)
+  def toHex(b: Array[Byte]): String = DatatypeConverter.printHexBinary(b).toLowerCase
 
   /**
     * Get transaction hash hexstring
@@ -177,7 +140,7 @@ object Utils {
     * @param transaction
     * @return lowercase hexstring
     */
-  def toHexHash(transaction: Transaction): String = DatatypeConverter.printHexBinary(hash(transaction)).toLowerCase
+  def toHexHash(transaction: protocol.Transaction): String = toHex(hash(transaction))
 
   /**
     * Get query hash hexstring
@@ -185,7 +148,7 @@ object Utils {
     * @param query
     * @return lowercase hexstring
     */
-  def toHexHash(query: Query): String = DatatypeConverter.printHexBinary(hash(query)).toLowerCase
+  def toHexHash(query: protocol.Query): String = toHex(hash(query))
 
   /**
     * Get block_v1 hash hexstring
@@ -193,7 +156,7 @@ object Utils {
     * @param block_v1
     * @return lowercase hexstring
     */
-  def toHexHash(block_v1: Block_v1): String = DatatypeConverter.printHexBinary(hash(block_v1)).toLowerCase
+  def toHexHash(block_v1: protocol.Block_v1): String = toHex(hash(block_v1))
 
   /**
     * Get block hash hexstring
@@ -201,33 +164,7 @@ object Utils {
     * @param block
     * @return lowercase hexstring
     */
-  def toHexHash(block: Block): String = DatatypeConverter.printHexBinary(hash(block)).toLowerCase
-
-  def getProtoBatchHashesHex(list: Seq[Transaction]): Seq[String] = list.map(reducedHash).map(toHex)
-
-  private def createBatch(list: Seq[Transaction], batchType: BatchType, keyPair: KeyPair) = {
-    val batchHashes = getProtoBatchHashesHex(list)
-    list.map { tx =>
-      val transaction = tx.copy(
-        tx.payload.map { p =>
-          p.withBatch(BatchMeta(batchType, batchHashes))
-        }
-      )
-      transaction.payload match {
-        case Some(p) => transaction.addSignatures(sign(p, keyPair))
-        case _ => transaction
-      }
-    }
-  }
-
-  def getBatchHashesHex(list: Seq[Transaction]): Seq[String] = list.map(reducedHash).map(toHex)
-
-  private def createBatch(list: Seq[Transaction], batchType: BatchType) = {
-    val batchHashes = getBatchHashesHex(list)
-    list.map(tx => tx.copy(
-      tx.payload.map(_.withBatch(BatchMeta(batchType, batchHashes)))
-    ))
-  }
+  def toHexHash(block: protocol.Block): String = toHex(hash(block))
 
   /**
     * Escapes symbols reserved in JSON so it can be used in Iroha
