@@ -45,4 +45,13 @@ lazy val `iroha-akka` = (project in file("akka"))
   )
   .settings(Akka.akkaSettings: _*)
   .settings(commonSettings: _*)
+  .settings(
+    scalacOptions ++= Seq(
+      //Set a relative file path
+      s"-P:silencer:sourceRoots=${baseDirectory.value.getCanonicalPath}",
+      //Ignore the google protobuf errors. https://github.com/akka/akka-grpc/issues/540.
+      "-P:silencer:pathFilters=target/scala-2.12/src_managed/main/com/google/protobuf/descriptor/FileOptions.scala",
+      "-unchecked", "-deprecation", "-feature", "-Xfatal-warnings"
+    )
+  )
   .enablePlugins(AkkaGrpcPlugin)
