@@ -5,7 +5,7 @@ import java.util.UUID
 
 import iroha.protocol.Query.Payload.Query
 import org.scalatest.concurrent.{Eventually, ScalaFutures}
-import org.scalatest.{Assertion, AsyncWordSpec, BeforeAndAfterAll, Matchers}
+import org.scalatest.{AsyncWordSpec, BeforeAndAfterAll, Matchers}
 import akka.{Done, NotUsed}
 import akka.actor.ActorSystem
 import akka.grpc.GrpcClientSettings
@@ -269,63 +269,23 @@ class IrohaSpec extends AsyncWordSpec with Matchers with BeforeAndAfterAll with 
           assert(statuses4.contains(ToriiResponse(TxStatus.COMMITTED, signedBatch(3).hashHex)))
         }
       }
+
+      "query admin account" in {
+        import iroha.protocol.GetAccountAssets
+        val payload = Payload.createEmptyQuery(irohaAdminAccount).update(_.getAccountAssets.set(GetAccountAssets(irohaAdminAccount.toIrohaString)))
+
+        queryClient.find(payload.toQuery.sign(irohaAdminKeypair))
+          .map { r =>
+            println(r)
+            r
+          }
+          .collect {
+            case QueryResponse(QueryResponse.AccountAssetsResponse(response)) =>
+              println(response)
+              assert(true)
+          }
+      }
     }
-//    "GetAccount" should {
-//      "query admin account" in {
-//        import iroha.protocol.Query.Payload.Query.GetAccount
-//        import iroha.protocol.QueryPayloadMeta
-//        import iroha.protocol.Query
-//        import iroha.protocol.Query.Payload
-//        val createdTime = System.currentTimeMillis()
-//        val payloadMeta = QueryPayloadMeta(
-//          createdTime = createdTime,
-//          creatorAccountId = "admin@test",
-//          queryCounter = 1
-//        )
-//        val pk = Utils.parseHexKeypair(
-//          "313a07e6384776ed95447710d15e59148473ccfc052a681317a72a69f2a49910",
-//          "f101537e319568c765b2cc89698325604991dca57b9716b58016b253506cab70"
-//        )
-//        val p = Payload(
-//          Some(payloadMeta),
-//          GetAccount(iroha.protocol.GetAccount("admin@test"))
-//        )
-//
-//        val q = Query(Some(p))
-//        val sig = Utils.sign(q, pk)
-//
-//        queryClient.find(q.withSignature(sig)).map { r =>
-//          println(r)
-//          assert(r.response.isAccountResponse)
-//        }
-//      }
-//    }
-//    "AddAsset" should {
-//      "add asset to admin account" in {
-//        import iroha.protocol.Command
-//        import iroha.protocol.AddAssetQuantity
-//        val command = Command().update(_.addAssetQuantity.set(
-//          AddAssetQuantity("coin#test", "100.0")
-//        ))
-//
-//        val pk = Utils.parseHexKeypair(
-//          "313a07e6384776ed95447710d15e59148473ccfc052a681317a72a69f2a49910",
-//          "f101537e319568c765b2cc89698325604991dca57b9716b58016b253506cab70"
-//        )
-//        val payload = Payload.createFromCommand(command, Account("admin@test"))
-//        val tx = Transaction.createFromPayload(payload, pk)
-////        val pload = Utils.createTxOrderedBatch(Seq(tx), pk)
-////        commandClient.listTorii(TxList(pload)).flatMap { _ =>
-//        commandClient.torii(tx).flatMap { _ =>
-//          Thread.sleep(2000)
-//          commandClient.statusStream(TxStatusRequest(Utils.toHex(Utils.hash(payload))))
-//            .runWith(Sink.foreach(println))
-//              .map {
-//                _ => assert(true)
-//              }
-//        }
-//      }
-//    }
   }
 }
 

@@ -21,6 +21,16 @@ object Implicits {
     def transaction: protocol.Transaction = protocol.Transaction(Some(payload))
   }
 
+  implicit class PayloadToQuery(payload: protocol.Query.Payload) {
+    def toQuery: protocol.Query = protocol.Query(Some(payload))
+  }
+
+  implicit class SignQuery(query: protocol.Query) {
+    def sign(keyPair: KeyPair): protocol.Query = {
+      query.withSignature(Signature.sign(query, keyPair))
+    }
+  }
+
   implicit class HashTransaction(transaction: protocol.Transaction) {
     def hashBytes: Array[Byte] = Utils.hash(transaction)
     def hashHex: String = Utils.toHex(hashBytes)
