@@ -9,7 +9,7 @@ object Akka {
   val akkaSettings: Seq[Setting[_]] = Seq(
     libraryDependencies ++= Seq(
       "com.typesafe.akka" %% "akka-stream" % AkkaVersion,
-      "com.typesafe.akka" %% "akka-stream-testkit" % AkkaVersion % Test,
+      "com.typesafe.akka" %% "akka-testkit" % AkkaVersion % Test,
       "org.scalatest" %% "scalatest" % ScalaTestVersion % Test,
       compilerPlugin("com.github.ghik" %% "silencer-plugin" % silencerVersion),
       "com.github.ghik" %% "silencer-lib" % silencerVersion

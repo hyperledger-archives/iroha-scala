@@ -1,6 +1,6 @@
 package net.cimadai.iroha
 
-import java.security.KeyPair
+import java.security.{Key, KeyPair}
 
 import iroha.protocol
 
@@ -24,5 +24,9 @@ object Implicits {
   implicit class HashTransaction(transaction: protocol.Transaction) {
     def hashBytes: Array[Byte] = Utils.hash(transaction)
     def hashHex: String = Utils.toHex(hashBytes)
+  }
+
+  implicit class HexJavaKey(key: Key) {
+    def hashHex: String = Utils.toHex(key.getEncoded)
   }
 }

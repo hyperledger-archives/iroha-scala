@@ -1,6 +1,6 @@
 package net.cimadai.iroha
 
-import iroha.protocol.TxStatusRequest
+import iroha.protocol.{ToriiResponse, TxStatus, TxStatusRequest}
 
 object Status {
   /**
@@ -10,4 +10,8 @@ object Status {
     * @return { @link TxStatusRequest}
     */
   def createTxStatusRequest(hash: Array[Byte]): TxStatusRequest = TxStatusRequest(Utils.toHex(hash))
+
+  val finalStatuses = Seq(TxStatus.COMMITTED, TxStatus.MST_EXPIRED, TxStatus.REJECTED, TxStatus.STATEFUL_VALIDATION_FAILED, TxStatus.STATELESS_VALIDATION_FAILED)
+  def isNotFinalStatus(txStatus: TxStatus): Boolean = !finalStatuses.contains(txStatus)
+  def isNotFinalStatus(toriiResponse: ToriiResponse): Boolean = isNotFinalStatus(toriiResponse.txStatus)
 }

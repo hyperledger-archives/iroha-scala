@@ -10,7 +10,7 @@ object Batch {
   /**
     * Create Ordered Batch of transactions created by single user from iterable
     */
-  def createTxOrderedBatch(list: Seq[protocol.Transaction], keyPair: KeyPair): Seq[protocol.Transaction] = createBatch(list, BatchType.ORDERED)
+  def createTxOrderedBatch(list: Seq[protocol.Transaction]): Seq[protocol.Transaction] = createBatch(list, BatchType.ORDERED)
 
   /**
     * Create Atomic Batch of transactions created by single user from iterable
