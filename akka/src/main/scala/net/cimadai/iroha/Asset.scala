@@ -9,7 +9,7 @@ case class Asset(name: String, domain: String) {
 
 object Asset {
   def apply(nameDomain: String): Asset = {
-    val split = nameDomain.split("@")
+    val split = nameDomain.split("#")
     Asset(split(0), split(1))
   }
 }
