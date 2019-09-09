@@ -1,7 +1,9 @@
-scalaVersion in ThisBuild := "2.12.8"
+scalaVersion in ThisBuild := "2.12.9"
 licenses in ThisBuild += ("Apache-2.0", url("https://www.apache.org/licenses/LICENSE-2.0.html"))
 
 val scalapbc = scalapb.compiler.Version.scalapbVersion
+
+skip in publish := true
 
 lazy val `iroha-scala` = (project in file("."))
   .aggregate(`iroha-monix`)
@@ -41,7 +43,17 @@ lazy val `iroha-monix` = (project in file("monix"))
 
 lazy val `iroha-akka` = (project in file("akka"))
   .settings(
-    name := "iroha-akka"
+    name := "iroha-akka",
+    organization := "castleone",
+    bintrayRepository := "iroha-akka",
+    bintrayOrganization in bintray := None,
+    fork in Test := true,
+    publishMavenStyle := false,
+    publishArtifact in Test := false,
+    pomIncludeRepository := { _ => false },
+    skip in publish := false,
+    sources in (Compile,doc) := Seq.empty,
+    publishArtifact in (Compile, packageDoc) := false
   )
   .settings(Akka.akkaSettings: _*)
   .settings(commonSettings: _*)
