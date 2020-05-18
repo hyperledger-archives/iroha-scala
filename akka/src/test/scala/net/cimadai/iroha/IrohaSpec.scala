@@ -285,6 +285,22 @@ class IrohaSpec extends AsyncWordSpec with Matchers with BeforeAndAfterAll with 
               assert(true)
           }
       }
+
+      "query admin account transactions" in {
+        import iroha.protocol.GetAccountTransactions
+        val payload = Payload.createEmptyQuery(irohaAdminAccount).update(_.getAccountTransactions.set(GetAccountTransactions(irohaAdminAccount.toIrohaString)))
+
+        queryClient.find(payload.toQuery.sign(irohaAdminKeypair))
+          .map { r =>
+            println(r)
+            r
+          }
+          .collect {
+            case QueryResponse(QueryResponse.AccountTransactionsResponse(response)) =>
+              println(response)
+              assert(true)
+          }
+      }
     }
   }
 }
