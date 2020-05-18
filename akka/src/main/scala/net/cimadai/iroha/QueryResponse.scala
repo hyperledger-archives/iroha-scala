@@ -23,7 +23,7 @@ object QueryResponse {
   def unapply(arg: protocol.QueryResponse): Option[QueryResponse] = arg.response match {
     case r if r.isAccountAssetsResponse => arg.response.accountAssetsResponse.map(AccountAssetsResponse.apply)
     case r if r.isAccountDetailResponse => arg.response.accountDetailResponse.map(AccountDetailResponse.apply)
-    case r if r.isAccountTransactionsResponse => arg.response.AccountTransactionsResponse.map(AccountTransactionsResponse.apply)
+    case r if r.isAccountTransactionsResponse => arg.response.accountTransactionsResponse.map(AccountTransactionsResponse.apply)
     case r if r.isAccountResponse => arg.response.accountResponse.map(AccountResponse.apply)
     case r if r.isErrorResponse => arg.response.errorResponse.map(ErrorResponse.apply)
     case r if r.isSignatoriesResponse => arg.response.signatoriesResponse.map(SignatoriesResponse.apply)
