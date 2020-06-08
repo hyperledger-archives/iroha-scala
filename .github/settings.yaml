@@ -1,0 +1,9 @@
+#
+# SPDX-License-Identifier: Apache-2.0
+#
+
+repository:
+  name: iroha-scala
+  description: Archive of iroha-scala: scala library for Hyperledger Iroha.
+  archived: true
+  private: false
