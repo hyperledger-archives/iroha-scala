@@ -43,17 +43,17 @@ lazy val `iroha-monix` = (project in file("monix"))
 
 lazy val `iroha-akka` = (project in file("akka"))
   .settings(
+    credentials += Credentials(Path.userHome / ".sbt" / "github-maven.credentials"),
+    resolvers += "castleone-github" at "https://maven.pkg.github.com/CastleOne",
     name := "iroha-akka",
     organization := "castleone",
-    bintrayRepository := "iroha-akka",
-    bintrayOrganization in bintray := None,
     fork in Test := true,
-    publishMavenStyle := false,
+    publishMavenStyle := true,
     publishArtifact in Test := false,
-    pomIncludeRepository := { _ => false },
     skip in publish := false,
     sources in (Compile,doc) := Seq.empty,
-    publishArtifact in (Compile, packageDoc) := false
+    publishArtifact in (Compile, packageDoc) := false,
+    publishTo := Option("github" at "https://maven.pkg.github.com/CastleOne/iroha-scala"),
   )
   .settings(Akka.akkaSettings: _*)
   .settings(commonSettings: _*)

@@ -7,7 +7,7 @@ Scala library for [Hyperledger Iroha](https://github.com/hyperledger/iroha).
 Add the following library dependency into your project:
 
 ```scala
-libraryDependencies += "org.hyperledger" %% "iroha-scala" % "1.06-SNAPSHOT"
+libraryDependencies += "castleone" %% "iroha-akka" % "1.0.10"
 ```
 
 ----

@@ -2,7 +2,7 @@ import sbt._
 import sbt.Keys._
 
 object Akka {
-  val AkkaVersion = "2.5.24"
+  val AkkaVersion = "2.5.26"
   val ScalaTestVersion = "3.0.4"
   val silencerVersion = "1.4.2"
   

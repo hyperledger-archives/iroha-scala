@@ -1,8 +1,3 @@
-//XXX addSbtPlugin("com.jsuereth" % "sbt-pgp" % "1.0.0")
-//XXX addSbtPlugin("net.virtual-void" % "sbt-dependency-graph" % "0.8.2")
-//XXX addSbtPlugin("org.foundweekends" % "sbt-bintray" % "0.5.2")
 addSbtPlugin("ch.epfl.lamp" % "sbt-dotty" % "0.2.6")
-addSbtPlugin("org.wartremover" % "sbt-wartremover" % "2.4.1")
 addSbtPlugin("com.thesamet" % "sbt-protoc" % "0.99.19")
 addSbtPlugin("com.lightbend.akka.grpc" % "sbt-akka-grpc" % "0.7.1")
-addSbtPlugin("org.foundweekends" % "sbt-bintray" % "0.5.5")
