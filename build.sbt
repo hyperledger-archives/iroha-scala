@@ -1,4 +1,4 @@
-scalaVersion in ThisBuild := "2.12.9"
+scalaVersion in ThisBuild := "2.13.8"
 licenses in ThisBuild += ("Apache-2.0", url("https://www.apache.org/licenses/LICENSE-2.0.html"))
 
 val scalapbc = scalapb.compiler.Version.scalapbVersion
@@ -6,7 +6,7 @@ val scalapbc = scalapb.compiler.Version.scalapbVersion
 skip in publish := true
 
 lazy val `iroha-scala` = (project in file("."))
-  .aggregate(`iroha-monix`)
+//  .aggregate(`iroha-monix`)
   .aggregate(`iroha-akka`)
 
 
@@ -29,17 +29,17 @@ val publishSettings: Seq[Setting[_]] =
     //TODO: bintrayOrganization in bintray := None,
   )
 
-lazy val `iroha-monix` = (project in file("monix"))
-  .settings(
-    name := "iroha-monix"
-  )
-  .settings(Monix.acyclicSettings: _*)
-  .settings(Monix.compilerSettings: _*)
-  .settings(Monix.testSettings: _*)
-  .settings(Monix.grpcSettings: _*)
-  .settings(Monix.monixSettings:_*)
-  .settings(commonSettings: _*)
-  .enablePlugins(ProtocPlugin)
+//lazy val `iroha-monix` = (project in file("monix"))
+//  .settings(
+//    name := "iroha-monix"
+//  )
+//  .settings(Monix.acyclicSettings: _*)
+//  .settings(Monix.compilerSettings: _*)
+//  .settings(Monix.testSettings: _*)
+//  .settings(Monix.grpcSettings: _*)
+//  .settings(Monix.monixSettings:_*)
+//  .settings(commonSettings: _*)
+//  .enablePlugins(ProtocPlugin)
 
 lazy val `iroha-akka` = (project in file("akka"))
   .settings(
@@ -60,9 +60,9 @@ lazy val `iroha-akka` = (project in file("akka"))
   .settings(
     scalacOptions ++= Seq(
       //Set a relative file path
-      s"-P:silencer:sourceRoots=${baseDirectory.value.getCanonicalPath}",
-      //Ignore the google protobuf errors. https://github.com/akka/akka-grpc/issues/540.
-      "-P:silencer:pathFilters=target/scala-2.12/src_managed/main/com/google/protobuf/descriptor/FileOptions.scala",
+//      s"-P:silencer:sourceRoots=${baseDirectory.value.getCanonicalPath}",
+//      //Ignore the google protobuf errors. https://github.com/akka/akka-grpc/issues/540.
+//      "-P:silencer:pathFilters=target/scala-2.12/src_managed/main/com/google/protobuf/descriptor/FileOptions.scala",
       "-unchecked", "-deprecation", "-feature", "-Xfatal-warnings"
     )
   )

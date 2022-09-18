@@ -2,10 +2,9 @@ package net.cimadai.iroha
 
 import java.security.KeyPair
 import java.util.UUID
-
 import iroha.protocol.Query.Payload.Query
 import org.scalatest.concurrent.{Eventually, ScalaFutures}
-import org.scalatest.{AsyncWordSpec, BeforeAndAfterAll, Matchers}
+import org.scalatest.BeforeAndAfterAll
 import akka.{Done, NotUsed}
 import akka.actor.ActorSystem
 import akka.grpc.GrpcClientSettings
@@ -15,6 +14,8 @@ import iroha.protocol.{CommandService_v1, CommandService_v1Client, QueryService_
 import jp.co.soramitsu.crypto.ed25519.Ed25519Sha3
 import Implicits._
 import akka.testkit.TestKit
+import org.scalatest.matchers.should.Matchers
+import org.scalatest.wordspec.AsyncWordSpec
 
 import scala.concurrent.Future
 import scala.concurrent.duration._
@@ -22,12 +23,11 @@ import scala.util.{Failure, Random, Success}
 import scala.collection.immutable
 
 class IrohaSpec extends AsyncWordSpec with Matchers with BeforeAndAfterAll with Eventually with ScalaFutures {
-  override def afterAll: Unit = {
+  override def afterAll(): Unit = {
     TestKit.shutdownActorSystem(system)
   }
 
   implicit lazy val system = ActorSystem("IrohaSpec")
-  implicit lazy val mat = ActorMaterializer()
   implicit lazy val ec = system.dispatcher
 
   // Take details how to connect to the service from the config.
@@ -63,12 +63,11 @@ class IrohaSpec extends AsyncWordSpec with Matchers with BeforeAndAfterAll with 
     "Setup new domain, assets and add amounts" should {
       "create new domain" in {
         import iroha.protocol.Command
-        import iroha.protocol.CreateDomain
-        val command = Command().update(_.createDomain.set(
-          CreateDomain(irohaDomain, irohaRole)
-        ))
+        import iroha.protocol.Command.Command.CreateDomain
+        import iroha.protocol
+        val command = CreateDomain(protocol.CreateDomain(irohaDomain, irohaRole))
 
-        val tx = Payload.createFromCommand(command, irohaAdminAccount).transaction
+        val tx = Payload.createFromCommand(Command.of(command), irohaAdminAccount).transaction
         //        val pload = Utils.createTxOrderedBatch(Seq(tx), pk)
         //        commandClient.listTorii(TxList(pload)).flatMap { _ =>
 
@@ -85,12 +84,11 @@ class IrohaSpec extends AsyncWordSpec with Matchers with BeforeAndAfterAll with 
       }
       "create new asset" in {
         import iroha.protocol.Command
-        import iroha.protocol.CreateAsset
-        val command = Command().update(_.createAsset.set(
-          CreateAsset(irohaIrohaAsset1, irohaDomain, 2)
-        ))
+        import iroha.protocol.Command.Command.CreateAsset
+        import iroha.protocol
+        val command = CreateAsset(protocol.CreateAsset(irohaIrohaAsset1, irohaDomain, 2))
 
-        val tx = Payload.createFromCommand(command, irohaAdminAccount).transaction
+        val tx = Payload.createFromCommand(Command.of(command), irohaAdminAccount).transaction
 
         commandClient.torii(tx.sign(irohaAdminKeypair)).flatMap { _ =>
           commandClient
@@ -105,12 +103,11 @@ class IrohaSpec extends AsyncWordSpec with Matchers with BeforeAndAfterAll with 
       }
       "create new first account" in {
         import iroha.protocol.Command
-        import iroha.protocol.CreateAccount
-        val command = Command().update(_.createAccount.set(
-          CreateAccount(irohaAccount1, irohaDomain, irohaAccount1Keypair.getPublic.hashHex)
-        ))
+        import iroha.protocol.Command.Command.CreateAccount
+        import iroha.protocol
+        val command = CreateAccount(protocol.CreateAccount(irohaAccount1, irohaDomain, irohaAccount1Keypair.getPublic.hashHex))
 
-        val tx = Payload.createFromCommand(command, irohaAdminAccount).transaction
+        val tx = Payload.createFromCommand(Command.of(command), irohaAdminAccount).transaction
 
         commandClient.torii(tx.sign(irohaAdminKeypair)).flatMap { _ =>
           commandClient
@@ -125,12 +122,11 @@ class IrohaSpec extends AsyncWordSpec with Matchers with BeforeAndAfterAll with 
       }
       "create new second account" in {
         import iroha.protocol.Command
-        import iroha.protocol.CreateAccount
-        val command = Command().update(_.createAccount.set(
-          CreateAccount(irohaAccount2, irohaDomain, irohaAccount2Keypair.getPublic.hashHex)
-        ))
+        import iroha.protocol.Command.Command.CreateAccount
+        import iroha.protocol
+        val command = CreateAccount(protocol.CreateAccount(irohaAccount2, irohaDomain, irohaAccount2Keypair.getPublic.hashHex))
 
-        val tx = Payload.createFromCommand(command, irohaAdminAccount).transaction
+        val tx = Payload.createFromCommand(Command.of(command), irohaAdminAccount).transaction
 
         commandClient.torii(tx.sign(irohaAdminKeypair)).flatMap { _ =>
           commandClient
@@ -145,12 +141,11 @@ class IrohaSpec extends AsyncWordSpec with Matchers with BeforeAndAfterAll with 
       }
       "add asset amount of 100.24 to account" in {
         import iroha.protocol.Command
-        import iroha.protocol.AddAssetQuantity
-        val command = Command().update(_.addAssetQuantity.set(
-          AddAssetQuantity(Asset(irohaIrohaAsset1, irohaDomain).toIrohaString, "100.24")
-        ))
+        import iroha.protocol.Command.Command.AddAssetQuantity
+        import iroha.protocol
+        val command = AddAssetQuantity(protocol.AddAssetQuantity(Asset(irohaIrohaAsset1, irohaDomain).toIrohaString, "100.24"))
 
-        val tx = Payload.createFromCommand(command, irohaAdminAccount).transaction
+        val tx = Payload.createFromCommand(Command.of(command), irohaAdminAccount).transaction
 
         commandClient.torii(tx.sign(irohaAdminKeypair)).flatMap { _ =>
           commandClient
@@ -165,12 +160,11 @@ class IrohaSpec extends AsyncWordSpec with Matchers with BeforeAndAfterAll with 
       }
       "transfer amount of 100.24 from admin account" in {
         import iroha.protocol.Command
-        import iroha.protocol.TransferAsset
-        val command = Command().update(_.transferAsset.set(
-          TransferAsset(irohaAdminAccount.toIrohaString, Account(irohaAccount1, irohaDomain).toIrohaString, Asset(irohaIrohaAsset1, irohaDomain).toIrohaString, "Transfer test", "100.24")
-        ))
+        import iroha.protocol.Command.Command.TransferAsset
+        import iroha.protocol
+        val command = TransferAsset(protocol.TransferAsset(irohaAdminAccount.toIrohaString, Account(irohaAccount1, irohaDomain).toIrohaString, Asset(irohaIrohaAsset1, irohaDomain).toIrohaString, "Transfer test", "100.24"))
 
-        val tx = Payload.createFromCommand(command, irohaAdminAccount).transaction
+        val tx = Payload.createFromCommand(Command.of(command), irohaAdminAccount).transaction
 
         commandClient.torii(tx.sign(irohaAdminKeypair)).flatMap { _ =>
           commandClient
@@ -185,12 +179,11 @@ class IrohaSpec extends AsyncWordSpec with Matchers with BeforeAndAfterAll with 
       }
       "append money_creator role for second account" in {
         import iroha.protocol.Command
-        import iroha.protocol.AppendRole
-        val command = Command().update(_.appendRole.set(
-          AppendRole(Account(irohaAccount2, irohaDomain).toIrohaString, "money_creator")
-        ))
+        import iroha.protocol.Command.Command.AppendRole
+        import iroha.protocol
+        val command = AppendRole(protocol.AppendRole(Account(irohaAccount2, irohaDomain).toIrohaString, "money_creator"))
 
-        val tx = Payload.createFromCommand(command, irohaAdminAccount).transaction
+        val tx = Payload.createFromCommand(Command.of(command), irohaAdminAccount).transaction
 
         commandClient.torii(tx.sign(irohaAdminKeypair)).flatMap { _ =>
           commandClient
@@ -205,29 +198,30 @@ class IrohaSpec extends AsyncWordSpec with Matchers with BeforeAndAfterAll with 
       }
       "add amount of 100123.01 to admin account and transfer to new account and transfer back to first account" in {
         import iroha.protocol.Command
-        import iroha.protocol.{TransferAsset, AddAssetQuantity, CreateAccount}
+        import iroha.protocol.Command.Command.{TransferAsset, AddAssetQuantity, CreateAccount}
+        import iroha.protocol
 
-        val addAssetQtyCommand = Command().update(_.addAssetQuantity.set(
-          AddAssetQuantity(Asset(irohaIrohaAsset1, irohaDomain).toIrohaString, "100123.01")
-        ))
+        val addAssetQtyCommand = AddAssetQuantity(
+          protocol.AddAssetQuantity(Asset(irohaIrohaAsset1, irohaDomain).toIrohaString, "100123.01")
+        )
 
-        val createAccountCommand = Command().update(_.createAccount.set(
-          CreateAccount(irohaAccount3, irohaDomain, irohaAccount3Keypair.getPublic.hashHex)
-        ))
+        val createAccountCommand = CreateAccount(
+          protocol.CreateAccount(irohaAccount3, irohaDomain, irohaAccount3Keypair.getPublic.hashHex)
+        )
 
-        val transferCommand = Command().update(_.transferAsset.set(
-          TransferAsset(Account(irohaAccount2, irohaDomain).toIrohaString, Account(irohaAccount3, irohaDomain).toIrohaString, Asset(irohaIrohaAsset1, irohaDomain).toIrohaString, "Transfer test 2", "100123.01")
-        ))
+        val transferCommand = TransferAsset(
+          protocol.TransferAsset(Account(irohaAccount2, irohaDomain).toIrohaString, Account(irohaAccount3, irohaDomain).toIrohaString, Asset(irohaIrohaAsset1, irohaDomain).toIrohaString, "Transfer test 2", "100123.01")
+        )
 
-        val transferBackCommand = Command().update(_.transferAsset.set(
-          TransferAsset(Account(irohaAccount3, irohaDomain).toIrohaString, Account(irohaAccount1, irohaDomain).toIrohaString, Asset(irohaIrohaAsset1, irohaDomain).toIrohaString, "Transfer test 3", "100123.01")
-        ))
+        val transferBackCommand = TransferAsset(
+          protocol.TransferAsset(Account(irohaAccount3, irohaDomain).toIrohaString, Account(irohaAccount1, irohaDomain).toIrohaString, Asset(irohaIrohaAsset1, irohaDomain).toIrohaString, "Transfer test 3", "100123.01")
+        )
 
         val batch = Batch.createTxOrderedBatch(Seq(
-          Payload.createFromCommand(addAssetQtyCommand, Account(irohaAccount2, irohaDomain)).transaction,
-          Payload.createFromCommand(createAccountCommand, irohaAdminAccount).transaction,
-          Payload.createFromCommand(transferCommand, Account(irohaAccount2, irohaDomain)).transaction,
-          Payload.createFromCommand(transferBackCommand, Account(irohaAccount3, irohaDomain)).transaction
+          Payload.createFromCommand(Command.of(addAssetQtyCommand), Account(irohaAccount2, irohaDomain)).transaction,
+          Payload.createFromCommand(Command.of(createAccountCommand), irohaAdminAccount).transaction,
+          Payload.createFromCommand(Command.of(transferCommand), Account(irohaAccount2, irohaDomain)).transaction,
+          Payload.createFromCommand(Command.of(transferBackCommand), Account(irohaAccount3, irohaDomain)).transaction
         ))
 
         val signedBatch = Seq(
@@ -296,7 +290,7 @@ class IrohaSpec extends AsyncWordSpec with Matchers with BeforeAndAfterAll with 
             r
           }
           .collect {
-            case QueryResponse(QueryResponse.AccountTransactionsResponse(response)) =>
+            case QueryResponse(QueryResponse.TransactionsPageResponse(response)) =>
               println(response)
               assert(true)
           }
