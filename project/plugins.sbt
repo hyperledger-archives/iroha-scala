@@ -1,5 +1,3 @@
-addSbtPlugin("com.jsuereth" % "sbt-pgp" % "1.0.0")
-
-addSbtPlugin("com.thesamet" % "sbt-protoc" % "0.99.1")
-
-libraryDependencies += "com.trueaccord.scalapb" %% "compilerplugin" % "0.5.45"
+//addSbtPlugin("ch.epfl.lamp" % "sbt-dotty" % "0.2.6")
+addSbtPlugin("com.thesamet" % "sbt-protoc" % "0.99.19")
+addSbtPlugin("com.lightbend.akka.grpc" % "sbt-akka-grpc" % "2.1.4")

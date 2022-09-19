@@ -1,89 +1,69 @@
-name := "iroha-scala"
+scalaVersion in ThisBuild := "2.13.8"
+licenses in ThisBuild += ("Apache-2.0", url("https://www.apache.org/licenses/LICENSE-2.0.html"))
 
-version := "1.0.0"
+val scalapbc = scalapb.compiler.Version.scalapbVersion
 
-val PROJECT_SCALA_VERSION = "2.11.8"
+skip in publish := true
 
-scalaVersion := PROJECT_SCALA_VERSION
+lazy val `iroha-scala` = (project in file("."))
+//  .aggregate(`iroha-monix`)
+  .aggregate(`iroha-akka`)
 
-useGpg in GlobalScope := true
 
-lazy val libraries = Seq(
-  "org.scala-lang" % "scala-library" % "2.11.8",
-  "org.scala-lang" % "scala-reflect" % "2.11.8",
-  "org.scala-lang.modules" %% "scala-xml" % "1.0.4",
-  "io.grpc" % "grpc-netty" % "1.0.1",
-  "com.trueaccord.scalapb" %% "scalapb-runtime-grpc" % com.trueaccord.scalapb.compiler.Version.scalapbVersion,
-  "com.trueaccord.scalapb" %% "scalapb-runtime" % com.trueaccord.scalapb.compiler.Version.scalapbVersion % "protobuf",
-  "org.bouncycastle" % "bcpg-jdk15on" % "1.51",
-  "net.i2p.crypto" % "eddsa" % "0.1.0",
-  "org.scalatest" %% "scalatest" % "2.2.1" % "test"
+val commonSettings: Seq[Setting[_]] = Seq(
+  resolvers += "jitpack" at "https://jitpack.io",
+  libraryDependencies ++= Seq(
+    "com.github.warchant" % "ed25519-sha3-java" % "2.0.1",
+    "com.thesamet.scalapb" %% "scalapb-runtime-grpc" % scalapbc,
+    "com.thesamet.scalapb" %% "scalapb-runtime-grpc" % scalapbc % "protobuf",
+  )
 )
 
-lazy val settings = Seq(
-  organization := "org.hyperledger",
-  scalaVersion := PROJECT_SCALA_VERSION,
-  javacOptions ++= Seq("-source", "1.8", "-target", "1.7", "-encoding", "UTF-8"),
-  javaOptions ++= Seq("-Xmx1G"),
-  scalacOptions ++= Seq(
-    "-target:jvm-1.8",
-    "-encoding", "UTF-8",
-    "-unchecked",
-    "-deprecation",
-    "-Xfuture",
-    "-Yno-adapted-args",
-    "-Ywarn-dead-code",
-    "-Ywarn-numeric-widen",
-    "-Ywarn-value-discard",
-    "-Ywarn-unused"
-  ),
-  libraryDependencies ++= libraries,
-
-  fork in Test := true,
-
-  publishMavenStyle := true,
-
-  publishArtifact in Test := false,
-
-  pomIncludeRepository := { _ => false },
-
-  publishTo <<= version { (v: String) =>
-    val nexus = "https://oss.sonatype.org/"
-    if (v.trim.endsWith("SNAPSHOT"))
-      Some("snapshots" at nexus + "content/repositories/snapshots")
-    else
-      Some("releases"  at nexus + "service/local/staging/deploy/maven2")
-  },
-
-  pomExtra := <url>https://github.com/hyperledger/iroha-scala</url>
-    <licenses>
-      <license>
-        <name>The Apache License, Version 2.0</name>
-        <url>http://www.apache.org/licenses/LICENSE-2.0</url>
-        <distribution>repo</distribution>
-      </license>
-    </licenses>
-    <scm>
-      <url>git@github.com:hyperledger/iroha-scala.git</url>
-      <connection>scm:git:git@github.com:hyperledger/iroha-scala.git</connection>
-    </scm>
-    <developers>
-      <developer>
-        <id>hyperledger</id>
-        <name>iroha-scala</name>
-        <url>https://github.com/hyperledger/iroha-scala</url>
-      </developer>
-    </developers>
-)
-
-lazy val irohaScala = (project in file("."))
-  .settings(settings: _*)
-  .settings(name := "iroha-scala")
-  .enablePlugins(ProtocPlugin)
-  .settings(
-    PB.targets in Compile := Seq(
-      scalapb.gen() -> (sourceManaged in Compile).value
-    ),
-    PB.protoSources in Compile := Seq(file("protos"))
+val publishSettings: Seq[Setting[_]] =
+  Seq(
+    publishMavenStyle := false,
+    publishArtifact in Test := false,
+    pomIncludeRepository := { _ => false },
+    //FIXME useGpg in xxxGlobalScope := true
+    //TODO: bintrayRepository := "iroha-scala",
+    //TODO: bintrayOrganization in bintray := None,
   )
 
+//lazy val `iroha-monix` = (project in file("monix"))
+//  .settings(
+//    name := "iroha-monix"
+//  )
+//  .settings(Monix.acyclicSettings: _*)
+//  .settings(Monix.compilerSettings: _*)
+//  .settings(Monix.testSettings: _*)
+//  .settings(Monix.grpcSettings: _*)
+//  .settings(Monix.monixSettings:_*)
+//  .settings(commonSettings: _*)
+//  .enablePlugins(ProtocPlugin)
+
+lazy val `iroha-akka` = (project in file("akka"))
+  .settings(
+    credentials += Credentials(Path.userHome / ".sbt" / "github-maven.credentials"),
+    resolvers += "castleone-github" at "https://maven.pkg.github.com/CastleOne",
+    name := "iroha-akka",
+    organization := "castleone",
+    fork in Test := true,
+    publishMavenStyle := true,
+    publishArtifact in Test := false,
+    skip in publish := false,
+    sources in (Compile,doc) := Seq.empty,
+    publishArtifact in (Compile, packageDoc) := false,
+    publishTo := Option("github" at "https://maven.pkg.github.com/CastleOne/iroha-scala"),
+  )
+  .settings(Akka.akkaSettings: _*)
+  .settings(commonSettings: _*)
+  .settings(
+    scalacOptions ++= Seq(
+      //Set a relative file path
+//      s"-P:silencer:sourceRoots=${baseDirectory.value.getCanonicalPath}",
+//      //Ignore the google protobuf errors. https://github.com/akka/akka-grpc/issues/540.
+//      "-P:silencer:pathFilters=target/scala-2.12/src_managed/main/com/google/protobuf/descriptor/FileOptions.scala",
+      "-unchecked", "-deprecation", "-feature", "-Xfatal-warnings"
+    )
+  )
+  .enablePlugins(AkkaGrpcPlugin)
